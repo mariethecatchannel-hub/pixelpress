@@ -152,6 +152,93 @@ Ordem recomendada: cada fase entrega algo usável sozinho.
 
 ---
 
+## 3.1 Bônus para usuários (nova seção)
+
+Bônus são créditos, dias ou sites extras dados a uma conta sem passar pelo checkout.
+Precisam de modelo de dados próprio, regras automáticas e um painel administrativo.
+
+### 3.1.1 Modelo de dados
+
+```
+bonuses
+  id            uuid pk
+  user_id       uuid fk -> users
+  org_id        uuid fk -> orgs
+  kind          enum('credits','days','sites','plan')
+  amount        numeric
+  reason        text            -- texto mostrado ao usuário
+  note          text            -- observação interna
+  status        enum('active','used','revoked','expired')
+  granted_by    uuid fk -> users (admin) | null (sistema)
+  granted_at    timestamptz
+  expires_at    timestamptz null
+  used_at       timestamptz null
+  idempotency_key text unique  -- evita bônus duplicado por retry/webhook
+
+coupons
+  id, code unique, kind enum('percent','fixed'), value,
+  months int, max_uses int, uses int, expires_at, active bool
+
+bonus_rules (por org/plataforma)
+  signup_credits, referral_credits, renewal_pct, expire_days, enabled
+```
+
+### 3.1.2 Tipos de bônus
+
+| Tipo | Efeito | Onde é consumido |
+|---|---|---|
+| `credits` | soma artigos ao limite do ciclo | `usage_counters` — checagem antes de gerar artigo |
+| `days` | empurra `current_period_end` da assinatura | webhook de cobrança / tela Planos |
+| `sites` | aumenta `maxSites` temporariamente | criação de site WordPress |
+| `plan` | upgrade temporário (ex.: PRO por 30 dias) | `subscriptions.temp_plan_until` |
+
+### 3.1.3 Regras automáticas
+1. **Boas-vindas**: `signup_credits` no cadastro (padrão 10), expira em `expire_days`.
+2. **Indicação**: +`referral_credits` para quem indica e para quem é indicado, creditado
+   quando o indicado faz a primeira assinatura paga (não no cadastro — evita fraude).
+3. **Renovação**: `renewal_pct`% de créditos extras a cada ciclo pago.
+4. **Compensação**: manual, pelo admin, com motivo obrigatório e log.
+5. **Campanha**: lote por segmento (plano, data de cadastro, inativos) com `idempotency_key`
+   por usuário+campanha.
+
+### 3.1.4 Regras de negócio
+- Bônus de `credits` **não** entram no MRR e não são reembolsáveis.
+- Consumo: primeiro os créditos do plano, depois os bônus que expiram antes (FIFO por validade).
+- Expiração: job diário marca `status='expired'`; bônus expirado não aparece na UI.
+- Limite: no máximo `X`% do limite do plano em bônus ativos (evita conta infinita).
+- Antifraude: máximo 1 bônus de indicação por CPF/e-mail/domínio, e bloqueio se o indicado
+  cancelar em menos de 7 dias (estorna o bônus).
+- Auditoria: toda concessão/cancelamento em `audit_log` com ator, IP e motivo.
+- Comunicação: e-mail "Você ganhou N créditos" + badge no sidebar e no dashboard.
+
+### 3.1.5 Endpoints
+
+```
+POST   /api/admin/bonuses            { userId, kind, amount, reason, note, expiresAt }
+GET    /api/admin/bonuses?userId=    lista com filtros
+POST   /api/admin/bonuses/:id/revoke
+POST   /api/admin/bonuses/campaign   { segment, kind, amount, reason, expiresAt }
+GET    /api/admin/bonus-rules        PATCH /api/admin/bonus-rules
+GET    /api/me/bonuses               bônus do próprio usuário (somente leitura)
+POST   /api/billing/apply-coupon     { code }  -> valida cupom no checkout
+```
+
+### 3.1.6 Onde o bônus aparece na UI
+- Sidebar: linha "+N de bônus" abaixo da barra de uso.
+- Dashboard: card "Créditos bônus" com validade e origem.
+- Planos: linha "Bônus ativos" somada ao limite do mês.
+- Perfil: histórico de bônus recebidos (somente leitura).
+- Admin: aba Bônus (concessão, cancelamento, filtros), aba Regras, aba Cupons, aba Logs.
+
+### 3.1.7 Testes
+- Bônus expirado não conta no limite.
+- Concessão duplicada com a mesma `idempotency_key` retorna o mesmo registro.
+- Revogar bônus já consumido → erro 409 e registro em log.
+- Limite de plano + bônus é respeitado no servidor (não só no cliente).
+- Bônus de indicação estornado quando o indicado cancela em < 7 dias.
+
+---
+
 ## 4. Migração do clone para o backend real
 
 1. Trocar `assets/store.js` por um cliente HTTP fino (`assets/api.js`) com os mesmos
@@ -174,6 +261,31 @@ Ordem recomendada: cada fase entrega algo usável sozinho.
 | 5 Feeds | 4–5 d | 8 sem |
 | 6 API pública | 4–5 d | 9 sem |
 | 7 Cobrança | 1–2 sem | 11 sem |
-| 8 Perfil/LGPD | 1 sem | 12 sem |
+| 3.1 Bônus (junto com a Fase 7) | 3–4 d | 12 sem |
+| 8 Perfil/LGPD | 1 sem | 13 sem |
 
-Um dev sênior full-stack, ~12 semanas até produção com cobrança ativa.
+Um dev sênior full-stack, ~13 semanas até produção com cobrança ativa e bônus.
+
+---
+
+## 6. Área administrativa do site original
+
+Investigação feita em 24/11/2026 sobre wordbee.com.br:
+
+- `/admin`, `/admin/dashboard`, `/admin/users`, `/admin/planos`, `/admin/bonus`,
+  `/admin/cupons`, `/admin/financeiro`, `/admin/afiliados`, `/admin/relatorios`,
+  `/admin/configuracoes`, `/admin/logs` → todos respondem **307** para
+  `/login?callbackUrl=%2Fadmin...`. Uma rota inexistente devolve **404**.
+- Ou seja: **existe** um segmento `/admin` protegido por autenticação. O middleware
+  redireciona qualquer visitante não autenticado, sem revelar o conteúdo.
+- O bundle JavaScript público (10 chunks baixados) **não** contém nenhuma referência a
+  `admin` — as rotas de admin não são pré-carregadas para visitantes. As únicas rotas
+  no bundle público são `/dashboard`, `/signup`, `/forgot-password`, `/signout` e `/error`.
+- Sem credenciais de administrador não é possível saber quais dessas subrotas existem de
+  fato (o redirect acontece antes de qualquer checagem de existência), nem o conteúdo delas.
+- `robots.txt` e `sitemap.xml` não existem (retornam a página 404 do app).
+
+**Conclusão:** a área admin é inacessível sem uma conta de administrador do Wordbee —
+não é possível clonar o conteúdo real. Foi construída uma versão reconstruída por
+inferência de produto (`admin.html` do clone), com Bônus, Usuários, Cupons, Regras e Logs,
+protegida por checagem de papel (`role === 'admin'`), que no clone é a conta demo.

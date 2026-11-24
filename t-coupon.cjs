@@ -1,0 +1,21 @@
+const { chromium } = require('playwright-core');
+const EXE = 'C:/Users/alex_/AppData/Local/ms-playwright/chromium-1255/chrome-win64/chrome.exe';
+(async () => {
+  const b = await chromium.launch({ executablePath: EXE });
+  const p = await b.newPage({ viewport: { width: 1400, height: 950 } });
+  p.on('pageerror', e => console.log('PAGEERROR', e.message));
+  await p.goto('http://127.0.0.1:52933/login.html');
+  await p.fill('#email', 'demo@pixelpress.com.br'); await p.fill('#password', 'demo123');
+  await p.click('#submitBtn'); await p.waitForURL('**/dashboard.html');
+  await p.goto('http://127.0.0.1:52933/admin.html'); await p.waitForTimeout(600);
+  await p.click('#tabs [data-tab="coupons"]'); await p.waitForTimeout(300);
+  await p.click('#newCoupon'); await p.waitForTimeout(400);
+  console.log('modal open:', await p.isVisible('#cCode'));
+  await p.fill('#cCode', 'teste99');
+  await p.click('#save'); await p.waitForTimeout(700);
+  const body = await p.$eval('#tabBody', e => e.innerText);
+  console.log('has TESTE99:', body.includes('TESTE99'));
+  console.log('toasts:', await p.$$eval('.toast', t => t.map(x => x.innerText)));
+  await p.screenshot({ path: 'shots/admin-coupons.png', fullPage: true });
+  await b.close();
+})();

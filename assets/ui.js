@@ -163,6 +163,7 @@
       <div class="sidebar-brand">${brand(32, 17)}</div>
       <nav class="sidebar-nav">
         ${NAV.map((n) => `<a class="sidebar-link ${n.href === active ? "active" : ""}" href="${n.href}">${icon(n.ico)}<span>${n.label}</span></a>`).join("")}
+        ${WB.admin && WB.admin.isAdmin(user) ? `<a class="sidebar-link ${active === "admin.html" ? "active" : ""}" href="admin.html" style="margin-top:.35rem;border-top:1px dashed #e5e7eb;padding-top:.6rem">${icon("shield")}<span>Admin</span></a>` : ""}
       </nav>
       <div class="sidebar-foot">
         <div class="sidebar-plan" style="border:1px solid #eee;border-radius:.65rem;padding:.7rem .8rem;background:linear-gradient(135deg,#FFFAEB,#FFF6DC)">
@@ -171,6 +172,7 @@
           </div>
           <div class="progress" style="margin:.45rem 0 .5rem"><span style="width:${usage.pct}%"></span></div>
           <div style="font-size:.7rem;color:#6b7280">${usage.total - usage.used} artigos restantes</div>
+          ${usage.bonus ? `<div style="font-size:.68rem;color:#E0A100;font-weight:600;margin-top:.15rem">+${usage.bonus} de bônus</div>` : ""}
           <a href="planos.html" class="btn btn-primary btn-sm" style="width:100%;margin-top:.55rem">Fazer upgrade</a>
         </div>
         <a class="sidebar-link" href="#" id="logoutBtn" style="margin-top:.5rem">${icon("logout")}<span>Sair</span></a>
@@ -244,6 +246,9 @@
     const bd = document.getElementById("modalBackdrop");
     if (bd) bd.classList.remove("open");
   }
+  /* alias: os handlers passam a função direto no addEventListener (evita receber o Event) */
+  const dismiss = () => closeModal();
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
   document.addEventListener("DOMContentLoaded", () => {
     theme.init();

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin — PIXELPRESS</title>
+  <link rel="icon" href="assets/pixelpress-icon.png">
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="__variable_231f96 __variable_532bb9 __variable_4dc837 font-sans">
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const shell = UI.mountShell({
+    active: "admin.html",
+    title: "Painel administrativo",
+    subtitle: "Bônus, cupons e operação das contas",
+    actions: `<button class="btn btn-primary btn-sm" id="grantBtn">${UI.icon("plus")} Conceder bônus</button>`,
+  });
+  if (!shell) return;
+  const { user } = shell;
+  const I = UI.icon, F = UI.fmt;
+  const A = WB.admin;
+
+  /* ---- guarda de acesso: esta rota não existe no site original (307 -> /login) ---- */
+  if (!A.isAdmin(user)) {
+    shell.content.innerHTML = `
+      <div class="card card-pad" style="max-width:520px;margin:3rem auto;text-align:center">
+        <div style="color:#dc2626;margin-bottom:.75rem">${I("lock", "h-8 w-8")}</div>
+        <h2 style="font-weight:700;font-size:1.05rem">Acesso restrito</h2>
+        <p style="font-size:.85rem;color:#6b7280;margin-top:.4rem">Esta área é exclusiva de administradores da PixelPress.</p>
+        <a href="dashboard.html" class="btn btn-outline btn-sm" style="margin-top:1rem">Voltar ao dashboard</a>
+      </div>`;
+    return;
+  }
+
+  const KIND_LABEL = { credits: "Créditos (artigos)", days: "Dias de assinatura", sites: "Sites extras", plan: "Upgrade de plano" };
+  const KIND_UNIT = { credits: "artigos", days: "dias", sites: "sites", plan: "plano" };
+
+  function totals() {
+    const d = A.data();
+    const users = A.users();
+    const active = d.bonus.filter((b) => b.status === "active");
+    return {
+      users: users.length,
+      bonusActive: active.length,
+      credits: active.filter((b) => b.kind === "credits").reduce((s, b) => s + Number(b.amount || 0), 0),
+      days: active.filter((b) => b.kind === "days").reduce((s, b) => s + Number(b.amount || 0), 0),
+      coupons: d.coupons.filter((c) => c.active).length,
+      mrr: users.reduce((s, u) => s + (WB.planOf(u).price || 0), 0),
+    };
+  }
+
+  function render() {
+    const t = totals();
+    const d = A.data();
+    const users = A.users();
+
+    shell.content.innerHTML = `
+      <div class="stat-grid">
+        <div class="card card-pad stat">
+          <div class="stat-label">Usuários</div>
+          <div class="stat-value">${t.users}</div>
+          <div class="stat-hint">${users.filter((u) => u.plan === "PRO" || u.plan === "ADVANCED").length} em plano alto</div>
+        </div>
+        <div class="card card-pad stat">
+          <div class="stat-label">Bônus ativos</div>
+          <div class="stat-value">${t.bonusActive}</div>
+          <div class="stat-hint">${t.credits} créditos · ${t.days} dias concedidos</div>
+        </div>
+        <div class="card card-pad stat">
+          <div class="stat-label">Cupons ativos</div>
+          <div class="stat-value">${t.coupons}</div>
+          <div class="stat-hint">${d.coupons.reduce((s, c) => s + c.uses, 0)} usos no total</div>
+        </div>
+        <div class="card card-pad stat">
+          <div class="stat-label">MRR estimado</div>
+          <div class="stat-value">${F.money(t.mrr)}</div>
+          <div class="stat-hint">soma dos planos ativos</div>
+        </div>
+      </div>
+
+      <div class="tabs" id="tabs" style="margin-top:1.5rem">
+        <button class="tab active" data-tab="bonus">Bônus concedidos</button>
+        <button class="tab" data-tab="users">Usuários</button>
+        <button class="tab" data-tab="coupons">Cupons</button>
+        <button class="tab" data-tab="rules">Regras de bônus</button>
+        <button class="tab" data-tab="logs">Logs</button>
+      </div>
+
+      <div id="tabBody"></div>
+    `;
+
+    document.querySelectorAll("#tabs .tab").forEach((b) => b.addEventListener("click", () => {
+      document.querySelectorAll("#tabs .tab").forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      paint(b.dataset.tab);
+    }));
+    paint("bonus");
+  }
+
+  function paint(tab) {
+    const body = document.getElementById("tabBody");
+    const d = A.data();
+    const users = A.users();
+    const byId = (id) => users.find((u) => u.id === id) || { name: "—", email: id, plan: "—" };
+
+    if (tab === "bonus") {
+      body.innerHTML = `
+        <div class="table-wrap card" style="margin-top:1rem">
+          <table>
+            <thead><tr><th>Usuário</th><th>Tipo</th><th>Valor</th><th>Motivo</th><th>Concedido</th><th>Expira</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              ${d.bonus.map((b) => `
+                <tr>
+                  <td>
+                    <div style="font-weight:600">${byId(b.userId).name}</div>
+                    <div style="font-size:.72rem;color:#9ca3af">${byId(b.userId).email}</div>
+                  </td>
+                  <td><span class="badge badge-amber">${KIND_LABEL[b.kind] || b.kind}</span></td>
+                  <td style="font-weight:700">+${b.amount} ${KIND_UNIT[b.kind] || ""}</td>
+                  <td>
+                    <div>${b.reason}</div>
+                    ${b.note ? `<div style="font-size:.72rem;color:#9ca3af">${b.note}</div>` : ""}
+                  </td>
+                  <td style="font-size:.8rem;color:#6b7280">${F.date(b.createdAt)}<div style="font-size:.7rem;color:#9ca3af">por ${b.createdBy || "admin"}</div></td>
+                  <td style="font-size:.8rem;color:#6b7280">${b.expiresAt ? F.date(b.expiresAt) : "nunca"}</td>
+                  <td>${b.status === "active" ? '<span class="badge badge-green">Ativo</span>' : b.status === "used" ? '<span class="badge badge-gray">Usado</span>' : '<span class="badge badge-red">Cancelado</span>'}</td>
+                  <td>${b.status === "active" ? `<button class="btn btn-ghost btn-sm" data-revoke="${b.id}">Cancelar</button>` : ""}</td>
+                </tr>`).join("") || `<tr><td colspan="8" class="empty">Nenhum bônus concedido ainda.</td></tr>`}
+            </tbody>
+          </table>
+        </div>`;
+
+      body.querySelectorAll("[data-revoke]").forEach((btn) => btn.addEventListener("click", () => {
+        if (!confirm("Cancelar este bônus?")) return;
+        A.revokeBonus(btn.dataset.revoke);
+        UI.toast.success("Bônus cancelado.");
+        render();
+      }));
+      return;
+    }
+
+    if (tab === "users") {
+      body.innerHTML = `
+        <div class="table-wrap card" style="margin-top:1rem">
+          <table>
+            <thead><tr><th>Usuário</th><th>Plano</th><th>Uso</th><th>Bônus ativos</th><th>Desde</th><th></th></tr></thead>
+            <tbody>
+              ${users.map((u) => {
+                const bonus = A.bonusTotals(u.id);
+                const use = WB.usage(u);
+                return `<tr>
+                  <td>
+                    <div style="font-weight:600">${u.name}</div>
+                    <div style="font-size:.72rem;color:#9ca3af">${u.email}</div>
+                  </td>
+                  <td><span class="badge badge-amber">${WB.planOf(u).name}</span></td>
+                  <td>
+                    <div style="font-size:.8rem">${use.used}/${use.total}</div>
+                    <div class="progress" style="width:110px;margin-top:.3rem"><span style="width:${use.pct}%"></span></div>
+                  </td>
+                  <td style="font-size:.8rem">
+                    ${bonus.count ? `<span class="badge badge-green">${bonus.count} ativo(s)</span>
+                      <div style="font-size:.72rem;color:#9ca3af;margin-top:.2rem">${bonus.credits} créditos · ${bonus.days} dias · ${bonus.sites} sites</div>` : '<span style="color:#9ca3af">—</span>'}
+                  </td>
+                  <td style="font-size:.8rem;color:#6b7280">${F.date(u.createdAt)}</td>
+                  <td><button class="btn btn-outline btn-sm" data-grant="${u.id}">Dar bônus</button></td>
+                </tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>`;
+      body.querySelectorAll("[data-grant]").forEach((b) => b.addEventListener("click", () => openGrant(b.dataset.grant)));
+      return;
+    }
+
+    if (tab === "coupons") {
+      body.innerHTML = `
+        <div class="flex justify-between items-center" style="margin-top:1rem">
+          <p style="font-size:.85rem;color:#6b7280">Cupons de desconto aplicáveis no checkout.</p>
+          <button class="btn btn-primary btn-sm" id="newCoupon">${I("plus")} Novo cupom</button>
+        </div>
+        <div class="table-wrap card" style="margin-top:.75rem">
+          <table>
+            <thead><tr><th>Código</th><th>Desconto</th><th>Duração</th><th>Usos</th><th>Validade</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              ${d.coupons.map((c) => `<tr>
+                <td style="font-family:ui-monospace,monospace;font-weight:700">${c.code}</td>
+                <td>${c.kind === "percent" ? c.value + "%" : F.money(c.value)}</td>
+                <td style="font-size:.8rem">${c.months ? c.months + " mês(es)" : "1ª cobrança"}</td>
+                <td style="font-size:.8rem">${c.uses}/${c.maxUses}</td>
+                <td style="font-size:.8rem;color:#6b7280">${c.expiresAt ? F.date(c.expiresAt) : "sem prazo"}</td>
+                <td>${c.active ? '<span class="badge badge-green">Ativo</span>' : '<span class="badge badge-gray">Inativo</span>'}</td>
+                <td><button class="btn btn-ghost btn-sm" data-toggle-coupon="${c.id}">${c.active ? "Desativar" : "Ativar"}</button></td>
+              </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`;
+
+      body.querySelector("#newCoupon").addEventListener("click", openCoupon);
+      body.querySelectorAll("[data-toggle-coupon]").forEach((b) => b.addEventListener("click", () => {
+        const c = d.coupons.find((x) => x.id === b.dataset.toggleCoupon);
+        c.active = !c.active;
+        A.log("coupon.toggle", c.code, c.active ? "ativado" : "desativado");
+        A.save();
+        UI.toast.success("Cupom atualizado.");
+        paint("coupons");
+      }));
+      return;
+    }
+
+    if (tab === "rules") {
+      const s = d.settings;
+      body.innerHTML = `
+        <div class="card card-pad" style="margin-top:1rem;max-width:640px">
+          <h3 style="font-weight:700;font-size:.95rem">Regras automáticas de bônus</h3>
+          <p style="font-size:.82rem;color:#6b7280;margin:.25rem 0 1rem">Aplicadas no cadastro, na renovação e em indicações.</p>
+          <div class="label">Bônus ativado</div>
+          <label class="switch" style="display:inline-flex;align-items:center;gap:.5rem;margin-bottom:1rem">
+            <input type="checkbox" id="rEnabled" ${s.bonusEnabled ? "checked" : ""}> <span style="font-size:.85rem">Permitir concessão de bônus</span>
+          </label>
+          <div class="grid md:grid-cols-2" style="gap:1rem">
+            <div><div class="label">Créditos no cadastro</div><input class="input" id="rSignup" type="number" value="${s.bonusAutoSignup}"></div>
+            <div><div class="label">Créditos por indicação</div><input class="input" id="rReferral" type="number" value="${s.bonusReferral}"></div>
+            <div><div class="label">% de bônus na renovação</div><input class="input" id="rRenewal" type="number" value="${s.bonusRenewalPct}"></div>
+            <div><div class="label">Validade do bônus (dias)</div><input class="input" id="rExpire" type="number" value="${s.bonusExpireDays}"></div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="saveRules" style="margin-top:1.25rem">Salvar regras</button>
+        </div>`;
+
+      body.querySelector("#saveRules").addEventListener("click", () => {
+        s.bonusEnabled = body.querySelector("#rEnabled").checked;
+        s.bonusAutoSignup = Number(body.querySelector("#rSignup").value) || 0;
+        s.bonusReferral = Number(body.querySelector("#rReferral").value) || 0;
+        s.bonusRenewalPct = Number(body.querySelector("#rRenewal").value) || 0;
+        s.bonusExpireDays = Number(body.querySelector("#rExpire").value) || 0;
+        A.log("settings.update", "bonus", "regras de bônus atualizadas");
+        A.save();
+        UI.toast.success("Regras salvas.");
+      });
+      return;
+    }
+
+    /* logs */
+    body.innerHTML = `
+      <div class="table-wrap card" style="margin-top:1rem">
+        <table>
+          <thead><tr><th>Quando</th><th>Ator</th><th>Ação</th><th>Alvo</th><th>Detalhe</th></tr></thead>
+          <tbody>
+            ${d.logs.map((l) => `<tr>
+              <td style="font-size:.8rem;color:#6b7280;white-space:nowrap">${F.dateTime(l.at)}</td>
+              <td><span class="badge badge-gray">${l.actor}</span></td>
+              <td style="font-family:ui-monospace,monospace;font-size:.78rem">${l.action}</td>
+              <td style="font-size:.8rem">${l.target}</td>
+              <td style="font-size:.8rem;color:#6b7280">${l.meta}</td>
+            </tr>`).join("") || `<tr><td colspan="5" class="empty">Sem registros.</td></tr>`}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function openGrant(userId) {
+    const users = A.users();
+    const sel = userId || users[0].id;
+    UI.openModal(`
+      <div class="modal-head">
+        <h3 style="font-weight:700;font-size:1.1rem">Conceder bônus</h3>
+        <p style="font-size:.82rem;color:#6b7280;margin-top:.2rem">O bônus entra em vigor imediatamente para a conta escolhida.</p>
+      </div>
+      <div class="modal-body" style="display:grid;gap:.9rem">
+        <div>
+          <div class="label">Usuário</div>
+          <select class="input" id="gUser">
+            ${users.map((u) => `<option value="${u.id}" ${u.id === sel ? "selected" : ""}>${u.name} — ${u.email}</option>`).join("")}
+          </select>
+        </div>
+        <div class="grid md:grid-cols-2" style="gap:.9rem">
+          <div>
+            <div class="label">Tipo de bônus</div>
+            <select class="input" id="gKind">
+              <option value="credits">Créditos (artigos)</option>
+              <option value="days">Dias de assinatura</option>
+              <option value="sites">Sites extras</option>
+              <option value="plan">Upgrade de plano</option>
+            </select>
+          </div>
+          <div>
+            <div class="label">Quantidade</div>
+            <input class="input" id="gAmount" type="number" min="1" value="10">
+          </div>
+        </div>
+        <div>
+          <div class="label">Motivo</div>
+          <input class="input" id="gReason" placeholder="Ex.: compensação por instabilidade" value="Bônus manual">
+        </div>
+        <div>
+          <div class="label">Observação (opcional)</div>
+          <input class="input" id="gNote" placeholder="Detalhe interno">
+        </div>
+        <div>
+          <div class="label">Validade</div>
+          <input class="input" id="gExpires" type="date">
+          <p style="font-size:.72rem;color:#9ca3af;margin-top:.3rem">Em branco = não expira.</p>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline btn-sm" id="cancel">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="save">Conceder bônus</button>
+      </div>
+    `, (box) => {
+      box.querySelector("#cancel").addEventListener("click", () => UI.closeModal());
+      box.querySelector("#save").addEventListener("click", () => {
+        const amount = Number(box.querySelector("#gAmount").value);
+        if (!amount || amount <= 0) { UI.toast.error("Informe uma quantidade válida."); return; }
+        A.grantBonus({
+          userId: box.querySelector("#gUser").value,
+          kind: box.querySelector("#gKind").value,
+          amount,
+          reason: box.querySelector("#gReason").value.trim() || "Bônus manual",
+          note: box.querySelector("#gNote").value.trim(),
+          expiresAt: box.querySelector("#gExpires").value ? new Date(box.querySelector("#gExpires").value + "T23:59:59").toISOString() : null,
+        });
+        UI.closeModal();
+        UI.toast.success("Bônus concedido.");
+        render();
+      });
+    });
+  }
+
+  function openCoupon() {
+    UI.openModal(`
+      <div class="modal-head">
+        <h3 style="font-weight:700;font-size:1.1rem">Novo cupom</h3>
+        <p style="font-size:.82rem;color:#6b7280;margin-top:.2rem">Cupons são aplicados no checkout do plano.</p>
+      </div>
+      <div class="modal-body" style="display:grid;gap:.9rem">
+        <div>
+          <div class="label">Código</div>
+          <input class="input" id="cCode" placeholder="PIXEL20" style="text-transform:uppercase">
+        </div>
+        <div class="grid md:grid-cols-2" style="gap:.9rem">
+          <div>
+            <div class="label">Tipo de desconto</div>
+            <select class="input" id="cKind">
+              <option value="percent">Percentual (%)</option>
+              <option value="fixed">Valor fixo (R$)</option>
+            </select>
+          </div>
+          <div>
+            <div class="label">Valor</div>
+            <input class="input" id="cValue" type="number" min="1" value="20">
+          </div>
+          <div>
+            <div class="label">Duração (meses)</div>
+            <input class="input" id="cMonths" type="number" min="0" value="1">
+          </div>
+          <div>
+            <div class="label">Limite de usos</div>
+            <input class="input" id="cMax" type="number" min="1" value="100">
+          </div>
+        </div>
+        <div>
+          <div class="label">Validade</div>
+          <input class="input" id="cExpires" type="date">
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline btn-sm" id="cancel">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="save">Criar cupom</button>
+      </div>
+    `, (box) => {
+      box.querySelector("#cancel").addEventListener("click", () => UI.closeModal());
+      box.querySelector("#save").addEventListener("click", () => {
+        const code = box.querySelector("#cCode").value.trim().toUpperCase();
+        if (!code) { UI.toast.error("Informe o código do cupom."); return; }
+        const d = A.data();
+        if (d.coupons.some((c) => c.code === code)) { UI.toast.error("Este código já existe."); return; }
+        d.coupons.unshift({
+          id: A.newId("c_"), code,
+          kind: box.querySelector("#cKind").value,
+          value: Number(box.querySelector("#cValue").value) || 0,
+          months: Number(box.querySelector("#cMonths").value) || 0,
+          maxUses: Number(box.querySelector("#cMax").value) || 100,
+          uses: 0,
+          expiresAt: box.querySelector("#cExpires").value ? new Date(box.querySelector("#cExpires").value + "T23:59:59").toISOString() : null,
+          active: true,
+        });
+        A.log("coupon.create", code, "cupom criado");
+        A.save();
+        UI.closeModal();
+        UI.toast.success("Cupom criado.");
+        paint("coupons");
+      });
+    });
+  }
+
+  document.getElementById("grantBtn").addEventListener("click", () => openGrant());
+  render();
+})();
+</script>
+</body>
+</html>

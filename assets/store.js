@@ -71,6 +71,32 @@
         },
       ],
       sessionUserId: null,
+      admin: {
+        bonus: [
+          { id: "b1", userId: "u_demo", kind: "credits", amount: 20, reason: "Bônus de boas-vindas", note: "Créditos extras no primeiro mês", createdAt: iso(t - 38 * day), expiresAt: iso(t + 20 * day), status: "active", createdBy: "sistema" },
+          { id: "b2", userId: "u_demo", kind: "days", amount: 30, reason: "Compensação de instabilidade", note: "Prorrogação do ciclo", createdAt: iso(t - 9 * day), expiresAt: null, status: "active", createdBy: "suporte" },
+          { id: "b3", userId: "u_demo", kind: "sites", amount: 2, reason: "Bônus de indicação", note: "Indicou 2 clientes", createdAt: iso(t - 25 * day), expiresAt: iso(t + 60 * day), status: "used", createdBy: "admin" },
+        ],
+        coupons: [
+          { id: "c1", code: "PIXEL20", kind: "percent", value: 20, months: 3, maxUses: 100, uses: 34, expiresAt: iso(t + 45 * day), active: true },
+          { id: "c2", code: "BLACK50", kind: "percent", value: 50, months: 1, maxUses: 500, uses: 500, expiresAt: iso(t - 20 * day), active: false },
+          { id: "c3", code: "INDICA10", kind: "fixed", value: 10, months: 0, maxUses: 1000, uses: 87, expiresAt: null, active: true },
+        ],
+        settings: {
+          bonusEnabled: true,
+          bonusAutoSignup: 10,
+          bonusReferral: 5,
+          bonusRenewalPct: 5,
+          creditValue: 0.9,
+          bonusExpireDays: 60,
+        },
+        logs: [
+          { id: "l1", at: iso(t - 2 * 3600000), actor: "admin", action: "bonus.grant", target: "u_demo", meta: "+20 créditos — Bônus de boas-vindas" },
+          { id: "l2", at: iso(t - 26 * 3600000), actor: "suporte", action: "bonus.grant", target: "u_demo", meta: "+30 dias — Compensação" },
+          { id: "l3", at: iso(t - 3 * day), actor: "admin", action: "coupon.create", target: "PIXEL20", meta: "20% por 3 meses" },
+          { id: "l4", at: iso(t - 6 * day), actor: "sistema", action: "plan.change", target: "u_demo", meta: "BASIC → PRO" },
+        ],
+      },
       sites: [
         { id: "s1", userId: "u_demo", name: "Blog de Receitas", url: "https://receitasdacasa.com.br", status: "connected", articles: 41, lastSync: iso(t - 2 * 3600000) },
         { id: "s2", userId: "u_demo", name: "Tech em Foco", url: "https://techeminfoco.com", status: "connected", articles: 22, lastSync: iso(t - 6 * 3600000) },
@@ -181,10 +207,67 @@
 
   function planOf(user) { return PLANS[user.plan] || PLANS.BASIC; }
 
+  /* ---------------- admin: bônus, cupons, logs ---------------- */
+  function adminData() {
+    const d = load();
+    if (!d.admin) d.admin = { bonus: [], coupons: [], logs: [], settings: { bonusEnabled: true, bonusAutoSignup: 0, bonusReferral: 0, bonusRenewalPct: 0, creditValue: 0.9, bonusExpireDays: 60 } };
+    if (!d.admin.bonus) d.admin.bonus = [];
+    if (!d.admin.coupons) d.admin.coupons = [];
+    if (!d.admin.logs) d.admin.logs = [];
+    return d.admin;
+  }
+
+  function adminLog(action, target, meta, actor) {
+    const a = adminData();
+    a.logs.unshift({ id: uid("l_"), at: iso(now()), actor: actor || "admin", action, target, meta });
+    if (a.logs.length > 200) a.logs.length = 200;
+    save();
+  }
+
+  /* bônus ativos de um usuário, somados por tipo */
+  function bonusesOf(userId) {
+    const nowT = now();
+    return adminData().bonus.filter((b) =>
+      b.userId === userId && b.status === "active" && (!b.expiresAt || new Date(b.expiresAt).getTime() > nowT)
+    );
+  }
+
+  function bonusTotals(userId) {
+    const out = { credits: 0, days: 0, sites: 0, count: 0 };
+    bonusesOf(userId).forEach((b) => { out[b.kind] = (out[b.kind] || 0) + Number(b.amount || 0); out.count++; });
+    return out;
+  }
+
+  function grantBonus({ userId, kind, amount, reason, note, expiresAt, createdBy }) {
+    const a = adminData();
+    const b = {
+      id: uid("b_"), userId, kind: kind || "credits", amount: Number(amount) || 0,
+      reason: reason || "Bônus manual", note: note || "",
+      createdAt: iso(now()), expiresAt: expiresAt || null, status: "active",
+      createdBy: createdBy || "admin",
+    };
+    a.bonus.unshift(b);
+    adminLog("bonus.grant", userId, `+${b.amount} ${kind === "credits" ? "créditos" : kind === "days" ? "dias" : "sites"} — ${b.reason}`, createdBy);
+    save();
+    return b;
+  }
+
+  function revokeBonus(id, actor) {
+    const a = adminData();
+    const b = a.bonus.find((x) => x.id === id);
+    if (!b) return null;
+    b.status = "revoked";
+    adminLog("bonus.revoke", b.userId, `Bônus cancelado — ${b.reason}`, actor);
+    save();
+    return b;
+  }
+
   function usage(user) {
     const p = planOf(user);
     const used = list("articles", user.id).filter((a) => a.status === "published" || a.status === "draft").length + (user.creditsUsed || 0);
-    return { used: Math.min(used, p.articlesPerMonth), total: p.articlesPerMonth, pct: Math.min(100, Math.round((used / p.articlesPerMonth) * 100)) };
+    const bonus = bonusTotals(user.id).credits;
+    const total = p.articlesPerMonth + bonus;
+    return { used: Math.min(used, total), total, pct: Math.min(100, Math.round((used / total) * 100)), bonus, base: p.articlesPerMonth };
   }
 
   /* ---------------- gerador de artigo simulado ---------------- */
@@ -219,6 +302,14 @@
   window.WB = {
     PLANS, PLAN_LIST, ARTICLE_TYPES, TONES,
     auth, list, add, remove, update, planOf, usage,
+    admin: {
+      data: adminData, log: adminLog, logAction: adminLog,
+      bonusesOf, bonusTotals, grantBonus, revokeBonus,
+      isAdmin(u) { return !!u && (u.role === "admin" || u.email === "demo@pixelpress.com.br"); },
+      users() { return load().users; },
+      newId(p) { return uid(p); },
+      save() { save(); },
+    },
     generateArticle, titleFor, uid, iso, now, trackEvent,
     resetDemo() { localStorage.removeItem(KEY); localStorage.removeItem(SESSION); db = null; },
   };
