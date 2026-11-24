@@ -30,6 +30,9 @@
       keys: WB.list("keys", u.id).length,
     };
 
+    const bonuses = WB.admin.bonusesOf(u.id);
+    const KIND_LABEL = { credits: "Créditos (artigos)", days: "Dias de assinatura", sites: "Sites extras", plan: "Upgrade de plano" };
+
     shell.content.innerHTML = `
       <div class="card card-pad" style="margin-bottom:1.25rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
         <div style="width:64px;height:64px;border-radius:9999px;background:linear-gradient(135deg,#E0A100,#FFC61A);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.35rem;font-weight:800">${UI.initials(u.name)}</div>
@@ -84,6 +87,23 @@
                 <button class="switch" id="prefDark" role="switch" aria-checked="${!!u.prefs?.darkMode}"></button>
               </div>
             </div>
+          </div>
+
+          <div class="card card-pad">
+            <div class="flex items-center justify-between" style="margin-bottom:.75rem">
+              <h3 style="font-weight:700;font-size:1rem">Bônus recebidos</h3>
+              <span class="badge badge-amber">${bonuses.length} registro(s)</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:.7rem">
+              ${bonuses.map((b) => `<div class="flex items-start justify-between" style="gap:.75rem">
+                <div style="min-width:0">
+                  <p style="font-size:.85rem;font-weight:600">${b.reason}</p>
+                  <p style="font-size:.72rem;color:#9ca3af;margin-top:.1rem">${KIND_LABEL[b.kind] || b.kind}${b.expiresAt ? " · expira em " + F.date(b.expiresAt) : " · não expira"}</p>
+                </div>
+                <span class="badge badge-green">+${b.amount}</span>
+              </div>`).join("") || `<p style="font-size:.82rem;color:#9ca3af">Você ainda não recebeu bônus.</p>`}
+            </div>
+            ${usage.bonus ? `<p style="font-size:.75rem;color:#E0A100;font-weight:600;margin-top:.85rem">+${usage.bonus} créditos somados ao seu limite neste ciclo (${usage.total} no total).</p>` : ""}
           </div>
 
           <div class="card card-pad">

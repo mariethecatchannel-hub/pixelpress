@@ -28,6 +28,7 @@
   const sites = WB.list("sites", user.id);
   const pipelines = WB.list("pipelines", user.id);
   const usage = WB.usage(user);
+  const bonuses = WB.admin.bonusesOf(user.id);
 
   const published = articles.filter((a) => a.status === "published");
   const words = articles.reduce((s, a) => s + (a.words || 0), 0);
@@ -39,6 +40,11 @@
         <div class="stat-label">${I("book", "h-4 w-4")} Artigos no mês</div>
         <div class="stat-value">${usage.used}<span style="font-size:1rem;color:#9ca3af;font-weight:600"> / ${usage.total}</span></div>
         <div class="progress" style="margin-top:.6rem"><span style="width:${usage.pct}%"></span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">${I("sparkles", "h-4 w-4")} Créditos bônus</div>
+        <div class="stat-value">${usage.bonus ? "+" + usage.bonus : "0"}</div>
+        <div class="stat-hint">${bonuses.length ? bonuses.length + " bônus ativo(s) · " + F.date(bonuses[0].createdAt) : "nenhum bônus ativo"}</div>
       </div>
       <div class="stat">
         <div class="stat-label">${I("checkCircle", "h-4 w-4")} Publicados</div>
