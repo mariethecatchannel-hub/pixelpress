@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Histórico — PIXELPRESS</title>
+  <link rel="icon" href="assets/pixelpress-icon.png">
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="__variable_231f96 __variable_532bb9 __variable_4dc837 font-sans">
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const shell = UI.mountShell({ active: "historico.html", title: "Histórico", subtitle: "Todos os artigos gerados pela sua conta" });
+  if (!shell) return;
+  const { user } = shell;
+  const I = UI.icon, F = UI.fmt;
+  const sites = WB.list("sites", user.id);
+  let filter = "all";
+  let query = "";
+
+  const STATUS = {
+    published: { label: "Publicado", cls: "badge-green" },
+    draft: { label: "Rascunho", cls: "badge-yellow" },
+    failed: { label: "Falhou", cls: "badge-red" },
+  };
+  const SOURCE = { manual: "Manual", pipeline: "Linha de produção", rss: "Feed RSS" };
+
+  function render() {
+    const all = WB.list("articles", user.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const rows = all.filter((a) => (filter === "all" || a.status === filter) && (!query || a.title.toLowerCase().includes(query.toLowerCase())));
+
+    shell.content.innerHTML = `
+      <div class="flex items-center justify-between" style="gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem">
+        <div class="tabs" id="tabs">
+          ${[["all", "Todos"], ["published", "Publicados"], ["draft", "Rascunhos"], ["failed", "Falhas"]].map(([k, l]) =>
+            `<button class="tab ${filter === k ? "active" : ""}" data-f="${k}">${l} <span style="color:#9ca3af">${k === "all" ? all.length : all.filter(a => a.status === k).length}</span></button>`).join("")}
+        </div>
+        <div class="flex items-center gap-2">
+          <div style="position:relative">
+            <span style="position:absolute;left:.65rem;top:50%;transform:translateY(-50%);color:#9ca3af;display:flex">${I("search", "h-4 w-4")}</span>
+            <input class="input pl-10" id="search" placeholder="Buscar por título..." style="width:240px" value="${query}">
+          </div>
+          <a href="criar-artigo.html" class="btn btn-primary btn-sm">${I("plus")} Novo artigo</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th>Artigo</th><th>Tipo</th><th>Origem</th><th>Site</th><th>Palavras</th><th>Data</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              ${rows.map((a) => {
+                const site = sites.find((s) => s.id === a.siteId);
+                const st = STATUS[a.status] || STATUS.draft;
+                return `<tr>
+                  <td style="font-weight:600;max-width:340px">
+                    <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.title}</div>
+                  </td>
+                  <td><span class="badge badge-amber">${a.type}</span></td>
+                  <td style="color:#6b7280">${SOURCE[a.source] || "Manual"}</td>
+                  <td style="color:#6b7280">${site ? site.name : "—"}</td>
+                  <td>${a.words ? F.num(a.words) : "—"}</td>
+                  <td style="color:#6b7280;white-space:nowrap">${F.dateTime(a.createdAt)}</td>
+                  <td><span class="badge ${st.cls}">${st.label}</span></td>
+                  <td style="text-align:right;white-space:nowrap">
+                    <button class="btn btn-ghost btn-icon" data-view="${a.id}" title="Ver">${I("eye", "h-4 w-4")}</button>
+                    <button class="btn btn-ghost btn-icon" data-del="${a.id}" title="Excluir" style="color:#dc2626">${I("trash", "h-4 w-4")}</button>
+                  </td>
+                </tr>`;
+              }).join("") || `<tr><td colspan="8"><div class="empty">${I("history")}Nenhum artigo encontrado</div></td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p style="font-size:.75rem;color:#9ca3af;margin-top:.75rem">Mostrando ${rows.length} de ${all.length} artigos</p>
+    `;
+
+    document.querySelectorAll("[data-f]").forEach((b) => b.addEventListener("click", () => { filter = b.dataset.f; render(); }));
+    const search = document.getElementById("search");
+    search.addEventListener("input", () => { query = search.value; render(); document.getElementById("search").focus(); });
+
+    document.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
+      if (!confirm("Excluir este artigo do histórico?")) return;
+      WB.remove("articles", b.dataset.del);
+      UI.toast.success("Artigo excluído.");
+      render();
+    }));
+
+    document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => {
+      const a = WB.list("articles", user.id).find((x) => x.id === b.dataset.view);
+      const site = sites.find((s) => s.id === a.siteId);
+      UI.openModal(`
+        <div class="modal-head">
+          <h3 style="font-weight:700;font-size:1.05rem;line-height:1.35">${a.title}</h3>
+          <p style="font-size:.78rem;color:#6b7280;margin-top:.35rem">${a.type} · ${a.words || 0} palavras · ${site ? site.name : "sem site"} · ${F.dateTime(a.createdAt)}</p>
+        </div>
+        <div class="modal-body">
+          <div style="border:1px solid #eee;border-radius:.6rem;padding:1rem;font-size:.85rem;line-height:1.7;color:#374151;background:#fcfcfd">
+            <p style="font-weight:700;margin-bottom:.5rem">Introdução</p>
+            <p>Este é um preview simulado do artigo gerado. No produto real, aqui aparece o conteúdo completo produzido pela IA, com subtítulos, listas e imagem destacada.</p>
+            <p style="font-weight:700;margin:.9rem 0 .5rem">Conteúdo</p>
+            <p>O texto é estruturado com H2/H3, responde à intenção de busca e inclui sugestões de links internos. O corpo do artigo fica em HTML pronto para o WordPress.</p>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-outline" id="mClose">Fechar</button>
+          <button class="btn btn-primary" id="mCopy">${I("copy")} Copiar HTML</button>
+        </div>`, (box) => {
+        box.querySelector("#mClose").addEventListener("click", UI.closeModal);
+        box.querySelector("#mCopy").addEventListener("click", () => { UI.toast.success("HTML copiado (simulado)."); UI.closeModal(); });
+      });
+    }));
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

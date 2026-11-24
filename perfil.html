@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Perfil — PIXELPRESS</title>
+  <link rel="icon" href="assets/pixelpress-icon.png">
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="__variable_231f96 __variable_532bb9 __variable_4dc837 font-sans">
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const shell = UI.mountShell({ active: "perfil.html", title: "Perfil", subtitle: "Seus dados, preferências e segurança" });
+  if (!shell) return;
+  const { user } = shell;
+  const I = UI.icon, F = UI.fmt;
+
+  function render() {
+    const u = WB.auth.current();
+    const plan = WB.planOf(u);
+    const usage = WB.usage(u);
+    const stats = {
+      articles: WB.list("articles", u.id).length,
+      sites: WB.list("sites", u.id).length,
+      pipelines: WB.list("pipelines", u.id).length,
+      keys: WB.list("keys", u.id).length,
+    };
+
+    shell.content.innerHTML = `
+      <div class="card card-pad" style="margin-bottom:1.25rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+        <div style="width:64px;height:64px;border-radius:9999px;background:linear-gradient(135deg,#E0A100,#FFC61A);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.35rem;font-weight:800">${UI.initials(u.name)}</div>
+        <div style="flex:1;min-width:200px">
+          <h2 style="font-weight:800;font-size:1.2rem">${u.name}</h2>
+          <p style="font-size:.85rem;color:#6b7280">${u.email} · plano <strong>${plan.name}</strong> · desde ${F.date(u.createdAt)}</p>
+        </div>
+        <a href="planos.html" class="btn btn-outline btn-sm">${I("creditCard")} Gerenciar plano</a>
+      </div>
+
+      <div class="stat-grid" style="margin-bottom:1.25rem">
+        <div class="stat"><div class="stat-label">${I("book", "h-4 w-4")} Artigos</div><div class="stat-value">${stats.articles}</div></div>
+        <div class="stat"><div class="stat-label">${I("globe", "h-4 w-4")} Sites</div><div class="stat-value">${stats.sites}</div></div>
+        <div class="stat"><div class="stat-label">${I("factory", "h-4 w-4")} Linhas</div><div class="stat-value">${stats.pipelines}</div></div>
+        <div class="stat"><div class="stat-label">${I("key", "h-4 w-4")} Chaves</div><div class="stat-value">${stats.keys}</div></div>
+      </div>
+
+      <div class="grid md:grid-cols-2" style="align-items:start">
+        <div class="card card-pad">
+          <h3 style="font-weight:700;font-size:1rem;margin-bottom:1rem">Dados da conta</h3>
+          <div style="display:flex;flex-direction:column;gap:.85rem">
+            <div><label class="label" style="display:block;margin-bottom:.35rem">Nome completo</label><input class="input" id="name" value="${u.name}"></div>
+            <div><label class="label" style="display:block;margin-bottom:.35rem">Email</label><input class="input" id="email" type="email" value="${u.email}"></div>
+            <div><label class="label" style="display:block;margin-bottom:.35rem">Nova senha (opcional)</label><input class="input" id="password" type="password" placeholder="Mínimo 6 caracteres"></div>
+            <button class="btn btn-primary" id="saveProfile" style="align-self:flex-start">${I("check")} Salvar alterações</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:1rem">
+          <div class="card card-pad">
+            <h3 style="font-weight:700;font-size:1rem;margin-bottom:1rem">Preferências</h3>
+            <div style="display:flex;flex-direction:column;gap:.9rem">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p style="font-size:.85rem;font-weight:600">Tom padrão dos artigos</p>
+                  <p style="font-size:.75rem;color:#6b7280">Aplicado ao criar novos artigos</p>
+                </div>
+                <select class="input" id="prefTone" style="width:160px">${WB.TONES.map(t => `<option ${t === u.prefs?.defaultTone ? "selected" : ""}>${t}</option>`).join("")}</select>
+              </div>
+              <div class="flex items-center justify-between">
+                <div>
+                  <p style="font-size:.85rem;font-weight:600">Gerar imagem automaticamente</p>
+                  <p style="font-size:.75rem;color:#6b7280">Imagem destacada em todo artigo</p>
+                </div>
+                <button class="switch" id="prefImage" role="switch" aria-checked="${!!u.prefs?.autoImage}"></button>
+              </div>
+              <div class="flex items-center justify-between">
+                <div>
+                  <p style="font-size:.85rem;font-weight:600">Modo escuro</p>
+                  <p style="font-size:.75rem;color:#6b7280">Também disponível no topo</p>
+                </div>
+                <button class="switch" id="prefDark" role="switch" aria-checked="${!!u.prefs?.darkMode}"></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card card-pad">
+            <h3 style="font-weight:700;font-size:1rem;margin-bottom:.75rem">Segurança</h3>
+            <p style="font-size:.8rem;color:#6b7280;margin-bottom:.85rem">Consumo do plano: ${usage.used}/${usage.total} artigos neste ciclo.</p>
+            <div class="progress" style="margin-bottom:1rem"><span style="width:${usage.pct}%"></span></div>
+            <div class="flex gap-2" style="flex-wrap:wrap">
+              <button class="btn btn-outline btn-sm" id="resetData">${I("refresh")} Restaurar dados demo</button>
+              <button class="btn btn-danger btn-sm" id="logoutBtn2">${I("logout")} Sair da conta</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("saveProfile").addEventListener("click", () => {
+      const name = document.getElementById("name").value.trim();
+      const email = document.getElementById("email").value.trim();
+      const pass = document.getElementById("password").value;
+      if (!name || !email) { UI.toast.error("Nome e email são obrigatórios."); return; }
+      const patch = { name, email };
+      if (pass) { if (pass.length < 6) { UI.toast.error("A senha precisa ter 6+ caracteres."); return; } patch.password = pass; }
+      WB.auth.update(patch);
+      UI.toast.success("Perfil atualizado.");
+      render();
+    });
+
+    document.getElementById("prefImage").addEventListener("click", (e) => {
+      const cur = WB.auth.current();
+      const v = !cur.prefs.autoImage;
+      WB.auth.update({ prefs: Object.assign({}, cur.prefs, { autoImage: v }) });
+      e.currentTarget.setAttribute("aria-checked", String(v));
+      UI.toast.success(v ? "Imagem automática ativada." : "Imagem automática desativada.");
+    });
+    document.getElementById("prefDark").addEventListener("click", (e) => {
+      UI.theme.toggle();
+      e.currentTarget.setAttribute("aria-checked", String(document.body.classList.contains("dark")));
+    });
+    document.getElementById("prefTone").addEventListener("change", (e) => {
+      const cur = WB.auth.current();
+      WB.auth.update({ prefs: Object.assign({}, cur.prefs, { defaultTone: e.target.value }) });
+      UI.toast.success("Tom padrão salvo.");
+    });
+    document.getElementById("resetData").addEventListener("click", () => {
+      if (!confirm("Restaurar os dados de demonstração? Isso apaga o que você criou neste clone.")) return;
+      WB.resetDemo();
+      location.href = "login.html";
+    });
+    document.getElementById("logoutBtn2").addEventListener("click", () => { WB.auth.logout(); location.href = "login.html"; });
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Feeds RSS — PIXELPRESS</title>
+  <link rel="icon" href="assets/pixelpress-icon.png">
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="__variable_231f96 __variable_532bb9 __variable_4dc837 font-sans">
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const shell = UI.mountShell({
+    active: "feeds-rss.html",
+    title: "Feeds RSS",
+    subtitle: "Transforme notícias de qualquer feed em artigos originais",
+    actions: `<button class="btn btn-primary btn-sm" id="newFeed">${UI.icon("plus")} Adicionar feed</button>`,
+  });
+  if (!shell) return;
+  const { user } = shell;
+  const I = UI.icon, F = UI.fmt;
+  const sites = WB.list("sites", user.id);
+
+  function render() {
+    const feeds = WB.list("feeds", user.id);
+    shell.content.innerHTML = `
+      <div class="card" style="margin-bottom:1.25rem">
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th>Feed</th><th>URL</th><th>Site destino</th><th>Itens</th><th>Última leitura</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              ${feeds.map((f) => {
+                const site = sites.find((s) => s.id === f.siteId);
+                return `<tr>
+                  <td style="font-weight:600">${f.name}</td>
+                  <td style="color:#6b7280;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.url}</td>
+                  <td>${site ? site.name : "—"}</td>
+                  <td>${f.items}</td>
+                  <td style="color:#6b7280">${F.ago(f.lastFetch)}</td>
+                  <td><button class="switch" role="switch" aria-checked="${f.active}" data-toggle="${f.id}"></button></td>
+                  <td style="text-align:right;white-space:nowrap">
+                    <button class="btn btn-ghost btn-icon" data-fetch="${f.id}" title="Buscar agora">${I("refresh", "h-4 w-4")}</button>
+                    <button class="btn btn-ghost btn-icon" data-del="${f.id}" title="Remover" style="color:#dc2626">${I("trash", "h-4 w-4")}</button>
+                  </td>
+                </tr>`;
+              }).join("") || `<tr><td colspan="7" class="empty">${I("rss")}Nenhum feed cadastrado</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card card-pad">
+          <h3 style="font-weight:700;font-size:.95rem;margin-bottom:.75rem">${I("rss", "h-4 w-4")} Últimos itens capturados</h3>
+          <div style="display:flex;flex-direction:column;gap:.75rem" id="items"></div>
+        </div>
+        <div class="card card-pad" style="background:linear-gradient(135deg,#FFFAEB,#FFF6DC);border-color:#FFF1C9">
+          <h3 style="font-weight:700;font-size:.95rem;margin-bottom:.5rem">Reescreva, não copie</h3>
+          <p style="font-size:.82rem;color:#6b7280;line-height:1.6">A PIXELPRESS lê o feed, entende o assunto e escreve um artigo original com SEO — evitando conteúdo duplicado e mantendo a sua voz editorial.</p>
+          <ul style="font-size:.8rem;color:#6b7280;margin-top:.75rem;padding-left:1rem;list-style:disc;line-height:1.7">
+            <li>Resumo automático da notícia</li>
+            <li>Novo título e estrutura própria</li>
+            <li>Imagem destacada gerada por IA</li>
+          </ul>
+        </div>
+      </div>
+    `;
+
+    const items = [
+      { title: "Nova versão do WordPress traz editor mais rápido", feed: "TechCrunch", ago: "há 12 min" },
+      { title: "OpenAI anuncia atualização do modelo de imagem", feed: "TechCrunch", ago: "há 40 min" },
+      { title: "Como o SEO mudou com as respostas de IA", feed: "Painel do Leitor (UOL)", ago: "há 3 h" },
+      { title: "Brasileiros usam mais IA para produzir conteúdo", feed: "Painel do Leitor (UOL)", ago: "há 5 h" },
+    ];
+    document.getElementById("items").innerHTML = items.map((it) => `
+      <div style="padding:.6rem 0;border-bottom:1px solid #f4f4f6">
+        <p style="font-size:.84rem;font-weight:600;line-height:1.3">${it.title}</p>
+        <p style="font-size:.72rem;color:#9ca3af;margin-top:.2rem">${it.feed} · ${it.ago}</p>
+      </div>`).join("");
+
+    document.querySelectorAll("[data-toggle]").forEach((b) => b.addEventListener("click", () => {
+      const f = WB.list("feeds", user.id).find((x) => x.id === b.dataset.toggle);
+      WB.update("feeds", f.id, { active: !f.active });
+      UI.toast.success(f.active ? "Feed desativado." : "Feed ativado.");
+      render();
+    }));
+    document.querySelectorAll("[data-fetch]").forEach((b) => b.addEventListener("click", async () => {
+      b.disabled = true;
+      const f = WB.list("feeds", user.id).find((x) => x.id === b.dataset.fetch);
+      await new Promise((r) => setTimeout(r, 800));
+      WB.update("feeds", f.id, { lastFetch: WB.iso(Date.now()), items: f.items + Math.floor(Math.random() * 4) });
+      UI.toast.success(`Feed “${f.name}” atualizado.`);
+      render();
+    }));
+    document.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
+      if (!confirm("Remover este feed?")) return;
+      WB.remove("feeds", b.dataset.del);
+      UI.toast.success("Feed removido.");
+      render();
+    }));
+  }
+
+  document.getElementById("newFeed").addEventListener("click", () => {
+    UI.openModal(`
+      <div class="modal-head">
+        <h3 style="font-weight:700;font-size:1.1rem">Adicionar feed RSS</h3>
+        <p style="font-size:.82rem;color:#6b7280;margin-top:.2rem">Cole a URL do feed e escolha onde os artigos serão publicados.</p>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:.85rem">
+        <div><label class="label" style="display:block;margin-bottom:.35rem">Nome</label><input class="input" id="mName" placeholder="Ex.: G1 Tecnologia"></div>
+        <div><label class="label" style="display:block;margin-bottom:.35rem">URL do feed</label><input class="input" id="mUrl" placeholder="https://exemplo.com/feed/"></div>
+        <div><label class="label" style="display:block;margin-bottom:.35rem">Site destino</label><select class="input" id="mSite">${sites.map(s => `<option value="${s.id}">${s.name}</option>`).join("") || `<option value="">—</option>`}</select></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" id="mCancel">Cancelar</button>
+        <button class="btn btn-primary" id="mSave">Adicionar</button>
+      </div>`, (box) => {
+      box.querySelector("#mCancel").addEventListener("click", UI.closeModal);
+      box.querySelector("#mSave").addEventListener("click", () => {
+        const name = box.querySelector("#mName").value.trim();
+        const url = box.querySelector("#mUrl").value.trim();
+        if (!name || !/^https?:\/\//.test(url)) { UI.toast.error("Informe nome e uma URL válida."); return; }
+        WB.add("feeds", { id: WB.uid("f_"), userId: user.id, name, url, siteId: box.querySelector("#mSite").value, active: true, items: 0, lastFetch: null });
+        UI.closeModal();
+        UI.toast.success("Feed adicionado.");
+        render();
+      });
+    });
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "wordbee-clone",
+  "version": "1.0.0",
+  "description": "",
+  "main": "shots.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "playwright-core": "^1.65.1"
+  }
+}

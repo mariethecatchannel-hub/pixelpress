@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planos — PIXELPRESS</title>
+  <link rel="icon" href="assets/pixelpress-icon.png">
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="__variable_231f96 __variable_532bb9 __variable_4dc837 font-sans">
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const shell = UI.mountShell({ active: "planos.html", title: "Planos", subtitle: "Gerencie sua assinatura" });
+  if (!shell) return;
+  const { user } = shell;
+  const I = UI.icon, F = UI.fmt;
+
+  function render() {
+    const u = WB.auth.current();
+    const plan = WB.planOf(u);
+    const usage = WB.usage(u);
+    const invoices = WB.list("invoices", u.id).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    shell.content.innerHTML = `
+      <div class="card card-pad" style="margin-bottom:1.5rem;background:linear-gradient(135deg,#E0A100,#F5B400 55%,#FFC61A);color:#fff;border:0">
+        <div class="flex items-start justify-between" style="gap:1rem;flex-wrap:wrap">
+          <div>
+            <p style="font-size:.75rem;font-weight:700;letter-spacing:.08em;opacity:.85">SEU PLANO ATUAL</p>
+            <h2 style="font-size:1.6rem;font-weight:800;margin-top:.25rem">${plan.name}</h2>
+            <p style="font-size:.85rem;opacity:.9;margin-top:.15rem">${F.money(plan.price)}/mês · ${plan.articlesPerMonth} artigos · ${plan.maxSites} site(s)</p>
+          </div>
+          <div style="min-width:220px">
+            <div class="flex items-center justify-between" style="font-size:.75rem;opacity:.95;margin-bottom:.35rem">
+              <span>Uso do ciclo</span><span>${usage.used}/${usage.total}</span>
+            </div>
+            <div class="progress" style="background:rgba(255,255,255,.25)"><span style="width:${usage.pct}%;background:#fff"></span></div>
+            <p style="font-size:.72rem;opacity:.85;margin-top:.4rem">Renova em ${F.date(new Date(new Date(u.cycleStart).getTime() + 30 * 86400000).toISOString())}</p>
+          </div>
+        </div>
+      </div>
+
+      <h2 style="font-weight:800;font-size:1.1rem;margin-bottom:.25rem">Escolha o plano ideal para você</h2>
+      <p style="font-size:.85rem;color:#6b7280;margin-bottom:1.25rem">Todos os planos incluem geração com IA avançada, imagens e publicação automática.</p>
+      <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-4" id="planGrid" style="display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))"></div>
+
+      <div class="card" style="margin-top:1.5rem">
+        <div style="padding:1.15rem 1.25rem .5rem"><h2 style="font-weight:700;font-size:1rem">Faturas</h2></div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th>Data</th><th>Plano</th><th>Valor</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              ${invoices.map((i) => `<tr>
+                <td>${F.date(i.date)}</td>
+                <td>${WB.PLANS[i.plan]?.name || i.plan}</td>
+                <td>${F.money(i.amount)}</td>
+                <td><span class="badge badge-green">${i.status}</span></td>
+                <td style="text-align:right"><button class="btn btn-ghost btn-sm">${I("file", "h-4 w-4")} PDF</button></td>
+              </tr>`).join("") || `<tr><td colspan="5" class="empty">Nenhuma fatura</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("planGrid").innerHTML = WB.PLAN_LIST.map((p) => {
+      const current = p.key === u.plan;
+      const highlight = p.highlight && !current;
+      return `<div class="card" style="padding:1.25rem;display:flex;flex-direction:column;${highlight ? "border-color:#FFD968;box-shadow:0 12px 30px rgba(124,58,237,.12)" : ""}">
+        <div class="flex items-center justify-between">
+          <h3 style="font-weight:800;font-size:1.05rem">${p.name}</h3>
+          ${current ? `<span class="badge badge-amber">Atual</span>` : p.highlight ? `<span class="badge badge-yellow">Mais popular</span>` : ""}
+        </div>
+        <p style="font-size:.75rem;color:#6b7280;margin-top:.25rem;min-height:2.2em">${p.description}</p>
+        <div style="margin:.75rem 0">
+          <span style="font-size:.78rem;color:#9ca3af;text-decoration:line-through">${F.money(p.originalPrice)}</span>
+          <div><span style="font-size:1.7rem;font-weight:800">${F.money(p.price)}</span><span style="font-size:.8rem;color:#6b7280">/mês</span></div>
+        </div>
+        <ul style="font-size:.8rem;color:#4b5563;display:flex;flex-direction:column;gap:.4rem;flex:1">
+          ${p.features.map((f) => `<li class="flex items-start gap-2"><span style="color:#E0A100;flex-shrink:0">${I("check", "h-4 w-4")}</span>${f}</li>`).join("")}
+        </ul>
+        <button class="btn ${current ? "btn-outline" : "btn-primary"}" style="width:100%;margin-top:1rem" data-plan="${p.key}" style="text-decoration:none" ${current ? "disabled" : ""}>${current ? "Plano atual" : "Assinar " + p.name}</button>
+      </div>`;
+    }).join("");
+
+    document.querySelectorAll("[data-plan]").forEach((b) => b.addEventListener("click", async () => {
+      const p = WB.PLANS[b.dataset.plan];
+      if (!confirm(`Trocar para o plano ${p.name} (${F.money(p.price)}/mês)?`)) return;
+      b.disabled = true; b.textContent = "Processando...";
+      await new Promise((r) => setTimeout(r, 900));
+      WB.auth.update({ plan: p.key, cycleStart: WB.iso(Date.now()), creditsUsed: 0 });
+      WB.add("invoices", { id: WB.uid("i_"), userId: user.id, date: WB.iso(Date.now()), amount: p.price, status: "pago", plan: p.key });
+      UI.toast.success(`Plano alterado para ${p.name}.`);
+      render();
+    }));
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

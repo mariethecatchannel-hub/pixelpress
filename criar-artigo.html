@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Criar Artigo — PIXELPRESS</title>
+  <link rel="icon" href="assets/pixelpress-icon.png">
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="__variable_231f96 __variable_532bb9 __variable_4dc837 font-sans">
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const shell = UI.mountShell({ active: "criar-artigo.html", title: "Criar Artigo", subtitle: "Da ideia ao artigo publicado em menos de 2 minutos" });
+  if (!shell) return;
+  const { user } = shell;
+  const I = UI.icon, F = UI.fmt;
+  const sites = WB.list("sites", user.id).filter((s) => s.status === "connected");
+  const usage = WB.usage(user);
+
+  shell.content.innerHTML = `
+    <div class="grid md:grid-cols-2" style="grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);align-items:start">
+      <div class="card card-pad">
+        <div style="display:flex;flex-direction:column;gap:1rem">
+          <div>
+            <label class="label" for="topic" style="display:block;margin-bottom:.4rem">Assunto do artigo</label>
+            <textarea class="input" id="topic" rows="3" placeholder="Ex.: como fazer pão de fermentação natural em casa"></textarea>
+            <p style="font-size:.72rem;color:#9ca3af;margin-top:.3rem">Quanto mais específico o assunto, melhor o resultado.</p>
+          </div>
+
+          <div class="grid md:grid-cols-2" style="gap:1rem">
+            <div>
+              <label class="label" for="type" style="display:block;margin-bottom:.4rem">Tipo de artigo</label>
+              <select class="input" id="type">
+                ${WB.ARTICLE_TYPES.map((t) => `<option>${t}</option>`).join("")}
+              </select>
+            </div>
+            <div>
+              <label class="label" for="tone" style="display:block;margin-bottom:.4rem">Tom de voz</label>
+              <select class="input" id="tone">
+                ${WB.TONES.map((t) => `<option ${t === "Profissional" ? "selected" : ""}>${t}</option>`).join("")}
+              </select>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2" style="gap:1rem">
+            <div>
+              <label class="label" for="site" style="display:block;margin-bottom:.4rem">Publicar no site</label>
+              <select class="input" id="site">
+                ${sites.length ? sites.map((s) => `<option value="${s.id}">${s.name}</option>`).join("") : `<option value="">Nenhum site conectado</option>`}
+              </select>
+            </div>
+            <div>
+              <label class="label" for="words" style="display:block;margin-bottom:.4rem">Tamanho aproximado</label>
+              <select class="input" id="words">
+                <option value="900">Curto (~900 palavras)</option>
+                <option value="1400" selected>Médio (~1.400 palavras)</option>
+                <option value="2200">Longo (~2.200 palavras)</option>
+              </select>
+            </div>
+          </div>
+
+          <label class="flex items-center gap-2" style="font-size:.85rem;font-weight:500">
+            <input type="checkbox" id="autoImage" checked style="accent-color:#E0A100;width:16px;height:16px">
+            Gerar imagem destacada com IA
+          </label>
+
+          <div class="flex items-center gap-2" style="margin-top:.25rem">
+            <button class="btn btn-primary" id="generateBtn">${I("sparkles")} Gerar artigo</button>
+            <button class="btn btn-outline" id="titlesBtn">${I("pen")} Sugerir títulos</button>
+          </div>
+          <p style="font-size:.72rem;color:#9ca3af">Consome 1 artigo do seu plano. Você tem <strong>${usage.total - usage.used}</strong> restantes.</p>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:1rem">
+        <div class="card card-pad">
+          <h3 style="font-weight:700;font-size:.95rem;margin-bottom:.75rem">${I("zap", "h-4 w-4")} Sugestões de títulos</h3>
+          <div id="titleList" style="display:flex;flex-direction:column;gap:.5rem">
+            <p style="font-size:.8rem;color:#9ca3af">Digite um assunto e clique em “Sugerir títulos”.</p>
+          </div>
+        </div>
+        <div class="card card-pad" style="background:linear-gradient(135deg,#FFFAEB,#FFF6DC);border-color:#FFF1C9">
+          <h3 style="font-weight:700;font-size:.95rem;margin-bottom:.5rem">Como funciona</h3>
+          <ol style="font-size:.8rem;color:#6b7280;line-height:1.6;padding-left:1.1rem;list-style:decimal">
+            <li>Digite o assunto e escolha o tipo</li>
+            <li>A IA gera título, conteúdo e imagem</li>
+            <li>Revise e publique no WordPress</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <div id="resultArea"></div>
+
+    <div class="modal-backdrop" id="genModal" style="display:none"></div>
+  `;
+
+  const topic = document.getElementById("topic");
+  const typeSel = document.getElementById("type");
+  const toneSel = document.getElementById("tone");
+  const siteSel = document.getElementById("site");
+
+  document.getElementById("titlesBtn").addEventListener("click", () => {
+    const t = topic.value.trim();
+    if (!t) { UI.toast.error("Digite o assunto do artigo."); topic.focus(); return; }
+    const variants = [typeSel.value, "Lista", "FAQ", "Guia completo"].map((ty) => WB.titleFor(t, ty));
+    document.getElementById("titleList").innerHTML = variants.map((v) => `
+      <button class="card" style="padding:.6rem .75rem;text-align:left;font-size:.82rem;font-weight:500;cursor:pointer" onclick="document.getElementById('topic').value='${v.replace(/'/g, "\\'")}';window.__pickTitle&&window.__pickTitle('${v.replace(/'/g, "\\'")}')">
+        ${v}
+      </button>`).join("");
+    UI.toast.info("Títulos gerados. Clique para usar.");
+  });
+
+  window.__pickTitle = (v) => { topic.value = v; UI.toast.success("Título aplicado ao assunto."); };
+
+  document.getElementById("generateBtn").addEventListener("click", async () => {
+    const t = topic.value.trim();
+    if (!t) { UI.toast.error("Digite o assunto do artigo."); topic.focus(); return; }
+    if (usage.used >= usage.total) { UI.toast.error("Limite do plano atingido. Faça upgrade para continuar."); return; }
+    const btn = document.getElementById("generateBtn");
+    btn.disabled = true;
+
+    const modal = document.getElementById("genModal");
+    modal.style.display = "flex";
+    modal.innerHTML = `<div class="modal" style="max-width:440px">
+      <div class="modal-body" style="padding:2rem 1.5rem;text-align:center">
+        <div style="width:56px;height:56px;margin:0 auto 1rem;border-radius:9999px;background:linear-gradient(135deg,#E0A100,#FFC61A);display:flex;align-items:center;justify-content:center;color:#fff;animation:pulse 1.4s infinite">${I("sparkles", "h-6 w-6")}</div>
+        <p style="font-weight:700;font-size:1rem" id="genStep">Analisando o assunto...</p>
+        <div class="progress" style="margin-top:1rem"><span id="genBar" style="width:8%;transition:width .5s"></span></div>
+      </div>
+    </div>`;
+
+    const steps = ["Analisando o assunto...", "Pesquisando referências de SEO...", "Escrevendo o conteúdo...", "Gerando a imagem destacada...", "Publicando no WordPress..."];
+    for (let i = 0; i < steps.length; i++) {
+      await new Promise((r) => setTimeout(r, 620));
+      document.getElementById("genStep").textContent = steps[i];
+      document.getElementById("genBar").style.width = Math.round(((i + 1) / steps.length) * 100) + "%";
+    }
+    await new Promise((r) => setTimeout(r, 350));
+    modal.style.display = "none";
+
+    const article = WB.generateArticle({ topic: t, type: typeSel.value, tone: toneSel.value, siteId: siteSel.value || null });
+    WB.add("articles", Object.assign({ userId: user.id }, article));
+    const site = sites.find((s) => s.id === siteSel.value);
+    if (site) WB.update("sites", site.id, { articles: site.articles + 1, lastSync: WB.iso(Date.now()) });
+
+    UI.toast.success("Artigo gerado e publicado com sucesso!");
+    btn.disabled = false;
+
+    document.getElementById("resultArea").innerHTML = `
+      <div class="card card-pad" style="margin-top:1.25rem;border-color:#bbf7d0;background:#f0fdf4">
+        <div class="flex items-center justify-between" style="gap:1rem;flex-wrap:wrap">
+          <div class="flex items-start gap-3">
+            <span style="color:#16a34a;flex-shrink:0">${I("checkCircle", "h-6 w-6")}</span>
+            <div>
+              <p style="font-weight:700;font-size:.95rem">${article.title}</p>
+              <p style="font-size:.78rem;color:#6b7280;margin-top:.2rem">${article.words} palavras · ${article.type} · tom ${article.tone} · ${site ? "publicado em " + site.name : "salvo como rascunho"}</p>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <a href="historico.html" class="btn btn-outline btn-sm">Ver no histórico</a>
+            <button class="btn btn-primary btn-sm" id="againBtn">Gerar outro</button>
+          </div>
+        </div>
+      </div>`;
+    document.getElementById("againBtn").addEventListener("click", () => location.reload());
+  });
+})();
+</script>
+<style>@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.08);opacity:.85}}</style>
+</body>
+</html>

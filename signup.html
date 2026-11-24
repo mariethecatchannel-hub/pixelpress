@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Criar conta — PIXELPRESS</title>
+  <link rel="icon" href="assets/pixelpress-icon.png">
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="__variable_231f96 __variable_532bb9 __variable_4dc837 font-sans">
+<div class="auth-bg min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
+  <div class="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl" style="background:rgba(245,180,0,.18)"></div>
+  <div class="absolute bottom-1/4 right-1/4 w-72 h-72 rounded-full blur-3xl" style="background:rgba(255,198,26,.16)"></div>
+
+  <div class="relative z-10 w-full max-w-md space-y-6">
+    <div class="flex justify-center">
+      <a href="index.html" class="flex items-center gap-2.5">
+        <img src="assets/pixelpress-icon.png" alt="PixelPress" width="48" height="48" class="rounded-lg object-contain" style="width:48px;height:48px">
+        <span class="font-display font-extrabold tracking-tight text-gray-900 text-2xl">PIXELPRESS</span>
+      </a>
+    </div>
+
+    <div class="card" style="box-shadow:0 20px 45px rgba(76,29,149,.12)">
+      <div class="flex flex-col space-y-1.5 p-6 text-center pb-2">
+        <h3 class="font-semibold font-display text-2xl tracking-tight">Criar conta na PIXELPRESS</h3>
+        <p class="text-sm text-muted-foreground">Comece a criar, ilustrar e publicar com IA hoje mesmo</p>
+      </div>
+      <div class="p-6 pt-0">
+        <form class="space-y-4" id="signupForm" novalidate>
+          <div class="rounded-xl border border-amber-200 bg-amber-50 p-4" id="planBox">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs font-medium text-amber-600 uppercase tracking-wider">Plano selecionado</p>
+                <p class="text-lg font-bold text-gray-900 mt-0.5" id="planName">Básico — R$ 49,90/mês</p>
+              </div>
+              <div class="flex h-8 w-8 items-center justify-center rounded-full bg-amber-600 text-white" id="planCheck"></div>
+            </div>
+            <p class="text-xs text-amber-600/70 mt-2" id="planMeta">50 artigos/mês · 1 site WordPress</p>
+          </div>
+
+          <div class="space-y-2">
+            <label class="label" for="name">Nome completo</label>
+            <div class="relative">
+              <span id="icoUser" style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:#9ca3af;display:flex"></span>
+              <input class="input pl-10" id="name" required placeholder="Seu nome" autocomplete="name">
+            </div>
+          </div>
+          <div class="space-y-2">
+            <label class="label" for="email">Email</label>
+            <div class="relative">
+              <span id="icoMail" style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:#9ca3af;display:flex"></span>
+              <input class="input pl-10" id="email" type="email" required placeholder="voce@email.com" autocomplete="email">
+            </div>
+          </div>
+          <div class="space-y-2">
+            <label class="label" for="password">Senha</label>
+            <div class="relative">
+              <span id="icoLock" style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:#9ca3af;display:flex;z-index:10"></span>
+              <input class="input pl-10 pr-10" id="password" type="password" required minlength="6" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+              <button type="button" id="togglePw" aria-label="Mostrar senha" style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);color:#9ca3af;background:none;border:0;cursor:pointer;display:flex"></button>
+            </div>
+          </div>
+          <button class="btn btn-primary w-full" type="submit" id="submitBtn"><span id="icoCard"></span> Criar conta e assinar</button>
+          <p class="text-center text-xs text-muted-foreground">Após criar a conta, você será redirecionado para o Mercado Pago para concluir a assinatura.</p>
+          <div class="text-center text-sm text-muted-foreground">Já tem conta? <a class="text-primary hover:underline" href="login.html">Entrar</a></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  document.getElementById("icoUser").innerHTML = UI.icon("user", "h-4 w-4");
+  document.getElementById("icoMail").innerHTML = UI.icon("mail", "h-4 w-4");
+  document.getElementById("icoLock").innerHTML = UI.icon("lock", "h-4 w-4");
+  document.getElementById("icoCard").outerHTML = UI.icon("creditCard", "h-4 w-4");
+  document.getElementById("togglePw").innerHTML = UI.icon("eye", "h-4 w-4");
+  document.getElementById("planCheck").innerHTML = UI.icon("check", "h-4 w-4");
+
+  const params = new URLSearchParams(location.search);
+  let planKey = (params.get("plan") || "BASIC").toUpperCase();
+  if (!WB.PLANS[planKey]) planKey = "BASIC";
+
+  function renderPlan() {
+    const p = WB.PLANS[planKey];
+    document.getElementById("planName").textContent = `${p.name} — ${UI.fmt.money(p.price)}/mês`;
+    document.getElementById("planMeta").textContent = `${p.articlesPerMonth} artigos/mês · ${p.maxSites} ${p.maxSites > 1 ? "sites" : "site"} WordPress`;
+  }
+  renderPlan();
+
+  document.getElementById("togglePw").addEventListener("click", () => {
+    const inp = document.getElementById("password");
+    const show = inp.type === "password";
+    inp.type = show ? "text" : "password";
+    document.getElementById("togglePw").innerHTML = UI.icon(show ? "eyeOff" : "eye", "h-4 w-4");
+  });
+
+  document.getElementById("signupForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("submitBtn");
+    const name = document.getElementById("name").value.trim();
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    if (!name || !email || password.length < 6) {
+      UI.toast.error("Preencha nome, email e uma senha com pelo menos 6 caracteres.");
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = "Criando conta...";
+    await new Promise((r) => setTimeout(r, 600));
+    const res = WB.auth.signup({ name, email, password, plan: planKey });
+    if (res.error) {
+      UI.toast.error(res.error);
+      btn.disabled = false;
+      btn.innerHTML = "Criar conta e assinar";
+      return;
+    }
+    UI.toast.success("Conta criada com sucesso!");
+    setTimeout(() => { location.href = "dashboard.html"; }, 400);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entrar — PIXELPRESS</title>
+  <link rel="icon" href="assets/pixelpress-icon.png">
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="__variable_231f96 __variable_532bb9 __variable_4dc837 font-sans">
+<div class="auth-bg min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
+  <div class="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl" style="background:rgba(245,180,0,.18)"></div>
+  <div class="absolute bottom-1/4 right-1/4 w-72 h-72 rounded-full blur-3xl" style="background:rgba(255,198,26,.16)"></div>
+
+  <div class="relative z-10 w-full max-w-md space-y-6">
+    <div class="flex justify-center">
+      <a href="index.html" class="flex items-center gap-2.5">
+        <img src="assets/pixelpress-icon.png" alt="PixelPress" width="48" height="48" class="rounded-lg object-contain" style="width:48px;height:48px">
+        <span class="font-display font-extrabold tracking-tight text-gray-900 text-2xl">PIXELPRESS</span>
+      </a>
+    </div>
+
+    <div class="card" style="box-shadow:0 20px 45px rgba(76,29,149,.12)">
+      <div class="flex flex-col space-y-1.5 p-6 text-center pb-2">
+        <h3 class="font-semibold font-display text-2xl tracking-tight">Entrar na PIXELPRESS</h3>
+        <p class="text-sm text-muted-foreground">Acesse sua conta para gerenciar seus artigos</p>
+      </div>
+      <div class="p-6 pt-0">
+        <form class="space-y-4" id="loginForm" novalidate>
+          <div class="space-y-2">
+            <label class="label" for="email">Email</label>
+            <div class="relative">
+              <span id="icoMail" style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:#9ca3af;display:flex"></span>
+              <input class="input pl-10" id="email" type="email" required placeholder="voce@email.com" autocomplete="email" value="">
+            </div>
+          </div>
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <label class="label" for="password">Senha</label>
+              <a class="text-xs text-primary hover:underline" href="forgot-password.html">Esqueceu a senha?</a>
+            </div>
+            <div class="relative">
+              <span id="icoLock" style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:#9ca3af;display:flex;z-index:10"></span>
+              <input class="input pl-10 pr-10" id="password" type="password" required placeholder="••••••••" autocomplete="current-password">
+              <button type="button" id="togglePw" aria-label="Mostrar senha" style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);color:#9ca3af;background:none;border:0;cursor:pointer;display:flex"></button>
+            </div>
+          </div>
+          <button class="btn btn-primary w-full" type="submit" id="submitBtn">Entrar</button>
+          <div class="text-center text-sm text-muted-foreground">Não tem conta? <a class="text-primary hover:underline" href="signup.html">Criar agora</a></div>
+        </form>
+
+        <div style="margin-top:1.25rem;border-top:1px dashed #ede9fe;padding-top:1rem">
+          <p style="font-size:.75rem;color:#9ca3af;text-align:center;margin-bottom:.5rem">Conta de demonstração deste clone</p>
+          <button class="btn btn-outline w-full btn-sm" id="demoBtn" type="button">Entrar com demo@pixelpress.com.br</button>
+        </div>
+      </div>
+    </div>
+    <p class="text-center" style="font-size:.7rem;color:#9ca3af">Clone de estudo — dados salvos apenas no seu navegador.</p>
+  </div>
+</div>
+
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  document.getElementById("icoMail").innerHTML = UI.icon("mail", "h-4 w-4");
+  document.getElementById("icoLock").innerHTML = UI.icon("lock", "h-4 w-4");
+  document.getElementById("togglePw").innerHTML = UI.icon("eye", "h-4 w-4");
+
+  const params = new URLSearchParams(location.search);
+  const callback = params.get("callbackUrl") || "dashboard.html";
+
+  document.getElementById("togglePw").addEventListener("click", () => {
+    const inp = document.getElementById("password");
+    const show = inp.type === "password";
+    inp.type = show ? "text" : "password";
+    document.getElementById("togglePw").innerHTML = UI.icon(show ? "eyeOff" : "eye", "h-4 w-4");
+  });
+
+  const form = document.getElementById("loginForm");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("submitBtn");
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    if (!email || !password) { UI.toast.error("Preencha email e senha."); return; }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;display:inline-block;animation:spin 1s linear infinite"></span> Entrando...';
+    await new Promise((r) => setTimeout(r, 500));
+    const res = WB.auth.login(email, password);
+    if (res.error) {
+      UI.toast.error(res.error);
+      btn.disabled = false;
+      btn.textContent = "Entrar";
+      return;
+    }
+    UI.toast.success("Bem-vindo de volta!");
+    setTimeout(() => { location.href = callback.replace(/^\//, ""); }, 300);
+  });
+
+  document.getElementById("demoBtn").addEventListener("click", async () => {
+    UI.toast.info("Entrando com a conta de demonstração...");
+    await new Promise((r) => setTimeout(r, 400));
+    const res = WB.auth.login("demo@pixelpress.com.br", "demo123");
+    if (res.error) return UI.toast.error(res.error);
+    location.href = "dashboard.html";
+  });
+
+  // se já está logado, vai direto
+  if (WB.auth.current()) location.replace("dashboard.html");
+})();
+</script>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+</body>
+</html>

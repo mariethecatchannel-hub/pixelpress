@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chaves de API — PIXELPRESS</title>
+  <link rel="icon" href="assets/pixelpress-icon.png">
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="__variable_231f96 __variable_532bb9 __variable_4dc837 font-sans">
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const shell = UI.mountShell({ active: "chaves-de-api.html", title: "Chaves de API", subtitle: "Suas chaves de IA e chaves de integração" });
+  if (!shell) return;
+  const { user } = shell;
+  const I = UI.icon, F = UI.fmt;
+
+  function mask(v) { return v.length > 10 ? v.slice(0, 6) + "••••••••" + v.slice(-4) : v; }
+
+  function render() {
+    const keys = WB.list("keys", user.id);
+    const u = WB.auth.current();
+    shell.content.innerHTML = `
+      <div class="card card-pad" style="margin-bottom:1.25rem">
+        <div class="flex items-center justify-between" style="margin-bottom:1rem">
+          <div>
+            <h2 style="font-weight:700;font-size:1rem">Chaves de IA (provider)</h2>
+            <p style="font-size:.78rem;color:#6b7280;margin-top:.15rem">Use suas próprias chaves. Criptografia AES-256 em repouso.</p>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.85rem">
+          <div>
+            <label class="label" style="display:block;margin-bottom:.35rem">OpenAI (GPT-4 / GPT Image)</label>
+            <div class="flex gap-2">
+              <input class="input" id="openai" placeholder="sk-..." value="${u.aiKeys?.openai ? mask(u.aiKeys.openai) : ""}">
+              <button class="btn btn-outline" data-save="openai">Salvar</button>
+            </div>
+          </div>
+          <div>
+            <label class="label" style="display:block;margin-bottom:.35rem">Google Gemini</label>
+            <div class="flex gap-2">
+              <input class="input" id="gemini" placeholder="AIza..." value="${u.aiKeys?.gemini ? mask(u.aiKeys.gemini) : ""}">
+              <button class="btn btn-outline" data-save="gemini">Salvar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:1.25rem">
+        <div class="flex items-center justify-between" style="padding:1.15rem 1.25rem">
+          <div>
+            <h2 style="font-weight:700;font-size:1rem">Chaves da API PIXELPRESS</h2>
+            <p style="font-size:.78rem;color:#6b7280;margin-top:.15rem">Para integrar seus próprios sistemas e automações.</p>
+          </div>
+          <button class="btn btn-primary btn-sm" id="newKey">${I("plus")} Nova chave</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th>Nome</th><th>Chave</th><th>Criada</th><th>Último uso</th><th></th></tr></thead>
+            <tbody>
+              ${keys.map((k) => `<tr>
+                <td style="font-weight:600">${k.label}</td>
+                <td class="font-mono-ui" style="font-size:.78rem;color:#6b7280">${k.value.slice(0, 8)}••••••••••••</td>
+                <td style="color:#6b7280">${F.date(k.createdAt)}</td>
+                <td style="color:#6b7280">${k.lastUsed ? F.ago(k.lastUsed) : "nunca"}</td>
+                <td style="text-align:right;white-space:nowrap">
+                  <button class="btn btn-ghost btn-icon" data-copy="${k.id}" title="Copiar">${I("copy", "h-4 w-4")}</button>
+                  <button class="btn btn-ghost btn-icon" data-del="${k.id}" title="Revogar" style="color:#dc2626">${I("trash", "h-4 w-4")}</button>
+                </td>
+              </tr>`).join("") || `<tr><td colspan="5" class="empty">${I("key")}Nenhuma chave criada</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card card-pad" style="background:linear-gradient(135deg,#FFFAEB,#FFF6DC);border-color:#FFF1C9">
+        <h3 style="font-weight:700;font-size:.95rem;margin-bottom:.5rem">Exemplo de uso</h3>
+        <pre class="font-mono-ui" style="font-size:.75rem;background:#0b1020;color:#e5e7eb;padding:.9rem 1rem;border-radius:.6rem;overflow-x:auto;line-height:1.6">curl -X POST https://api.pixelpress.com.br/v1/articles \\
+  -H "Authorization: Bearer wb_live_..." \\
+  -H "Content-Type: application/json" \\
+  -d '{"topic":"receitas veganas","type":"Receita","site_id":"s1"}'</pre>
+      </div>
+    `;
+
+    document.querySelectorAll("[data-save]").forEach((b) => b.addEventListener("click", () => {
+      const field = b.dataset.save;
+      const val = document.getElementById(field).value.trim();
+      if (!val) { UI.toast.error("Informe a chave."); return; }
+      const cur = WB.auth.current();
+      WB.auth.update({ aiKeys: Object.assign({}, cur.aiKeys, { [field]: val }) });
+      UI.toast.success("Chave salva com criptografia (simulada).");
+      render();
+    }));
+    document.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", () => {
+      const k = WB.list("keys", user.id).find((x) => x.id === b.dataset.copy);
+      navigator.clipboard?.writeText(k.value).catch(() => {});
+      UI.toast.success("Chave copiada.");
+    }));
+    document.getElementById("newKey").addEventListener("click", () => {
+      const label = prompt("Nome da nova chave:", "Minha integração");
+      if (!label) return;
+      const val = "wb_live_" + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+      WB.add("keys", { id: WB.uid("k_"), userId: user.id, label, value: val, createdAt: WB.iso(Date.now()), lastUsed: null });
+      UI.openModal(`<div class="modal-head"><h3 style="font-weight:700;font-size:1.05rem">Chave criada</h3><p style="font-size:.82rem;color:#6b7280;margin-top:.2rem">Copie agora — você não verá esta chave novamente.</p></div>
+        <div class="modal-body"><div class="font-mono-ui" style="background:#0b1020;color:#a7f3d0;padding:.9rem;border-radius:.6rem;font-size:.8rem;word-break:break-all">${val}</div></div>
+        <div class="modal-foot"><button class="btn btn-primary" id="ok">Copiar e fechar</button></div>`, (box) => {
+        box.querySelector("#ok").addEventListener("click", () => {
+          navigator.clipboard?.writeText(val).catch(() => {});
+          UI.closeModal(); UI.toast.success("Chave copiada."); render();
+        });
+      });
+    });
+    document.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
+      if (!confirm("Revogar esta chave? Integrações que a usam param de funcionar.")) return;
+      WB.remove("keys", b.dataset.del);
+      UI.toast.success("Chave revogada.");
+      render();
+    }));
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

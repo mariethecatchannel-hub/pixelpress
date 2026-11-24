@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard — PIXELPRESS</title>
+  <link rel="icon" href="assets/pixelpress-icon.png">
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="__variable_231f96 __variable_532bb9 __variable_4dc837 font-sans">
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const shell = UI.mountShell({
+    active: "dashboard.html",
+    title: "Dashboard",
+    subtitle: "Visão geral da sua produção de conteúdo",
+    actions: `<a href="criar-artigo.html" class="btn btn-primary btn-sm">${UI.icon("plus")} Criar artigo</a>`,
+  });
+  if (!shell) return;
+  const { user, plan } = shell;
+  const I = UI.icon, F = UI.fmt;
+
+  const articles = WB.list("articles", user.id);
+  const sites = WB.list("sites", user.id);
+  const pipelines = WB.list("pipelines", user.id);
+  const usage = WB.usage(user);
+
+  const published = articles.filter((a) => a.status === "published");
+  const words = articles.reduce((s, a) => s + (a.words || 0), 0);
+  const activePipelines = pipelines.filter((p) => p.active);
+
+  shell.content.innerHTML = `
+    <div class="stat-grid" style="margin-bottom:1.25rem">
+      <div class="stat">
+        <div class="stat-label">${I("book", "h-4 w-4")} Artigos no mês</div>
+        <div class="stat-value">${usage.used}<span style="font-size:1rem;color:#9ca3af;font-weight:600"> / ${usage.total}</span></div>
+        <div class="progress" style="margin-top:.6rem"><span style="width:${usage.pct}%"></span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">${I("checkCircle", "h-4 w-4")} Publicados</div>
+        <div class="stat-value">${published.length}</div>
+        <div class="stat-hint">${articles.filter(a => a.status === "draft").length} rascunhos · ${articles.filter(a => a.status === "failed").length} falhas</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">${I("file", "h-4 w-4")} Palavras geradas</div>
+        <div class="stat-value">${F.num(words)}</div>
+        <div class="stat-hint">média de ${articles.length ? Math.round(words / articles.length) : 0} por artigo</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">${I("globe", "h-4 w-4")} Sites conectados</div>
+        <div class="stat-value">${sites.filter(s => s.status === "connected").length}<span style="font-size:1rem;color:#9ca3af;font-weight:600"> / ${plan.maxSites}</span></div>
+        <div class="stat-hint">${sites.filter(s => s.status === "error").length} com erro de conexão</div>
+      </div>
+    </div>
+
+    <div class="grid md:grid-cols-2" style="margin-bottom:1.25rem">
+      <div class="card card-pad">
+        <div class="flex items-center justify-between" style="margin-bottom:1rem">
+          <h2 style="font-weight:700;font-size:1rem">Últimos artigos</h2>
+          <a href="historico.html" class="text-primary" style="font-size:.8rem;font-weight:600">Ver histórico</a>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.85rem">
+          ${articles.slice().sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,5).map((a) => {
+            const site = sites.find(s => s.id === a.siteId);
+            const badge = a.status === "published" ? "badge-green" : a.status === "draft" ? "badge-yellow" : "badge-red";
+            const label = a.status === "published" ? "Publicado" : a.status === "draft" ? "Rascunho" : "Falhou";
+            return `<div class="flex items-start justify-between" style="gap:.75rem">
+              <div style="min-width:0">
+                <p style="font-size:.86rem;font-weight:600;line-height:1.25;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical">${a.title}</p>
+                <p style="font-size:.72rem;color:#9ca3af;margin-top:.15rem">${a.type} · ${site ? site.name : "—"} · ${F.ago(a.createdAt)}</p>
+              </div>
+              <span class="badge ${badge}">${label}</span>
+            </div>`;
+          }).join("") || `<div class="empty">Nenhum artigo ainda</div>`}
+        </div>
+      </div>
+
+      <div class="card card-pad">
+        <div class="flex items-center justify-between" style="margin-bottom:1rem">
+          <h2 style="font-weight:700;font-size:1rem">Linhas de produção</h2>
+          <a href="linhas-de-producao.html" class="text-primary" style="font-size:.8rem;font-weight:600">Gerenciar</a>
+        </div>
+        ${pipelines.length ? pipelines.map((p) => `
+          <div style="padding:.7rem 0;border-bottom:1px solid #f4f4f6">
+            <div class="flex items-center justify-between">
+              <div>
+                <p style="font-size:.86rem;font-weight:600">${p.name}</p>
+                <p style="font-size:.72rem;color:#9ca3af;margin-top:.15rem">${p.produced} artigos · ${p.frequency === "daily" ? "diária" : p.frequency === "weekly" ? "semanal" : "2x semana"} · ${p.time}</p>
+              </div>
+              <span class="badge ${p.active ? "badge-green" : "badge-gray"}">${p.active ? "Ativa" : "Pausada"}</span>
+            </div>
+          </div>`).join("") : `<div class="empty">${I("factory")}Nenhuma linha criada</div>`}
+        <div style="margin-top:1rem;font-size:.78rem;color:#6b7280">${activePipelines.length} linha(s) ativa(s) produzindo 24/7</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="flex items-center justify-between" style="padding:1.15rem 1.25rem .5rem">
+        <h2 style="font-weight:700;font-size:1rem">Seus sites WordPress</h2>
+        <a href="sites-wordpress.html" class="text-primary" style="font-size:.8rem;font-weight:600">Adicionar site</a>
+      </div>
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>Site</th><th>URL</th><th>Status</th><th>Artigos</th><th>Última sincronização</th></tr></thead>
+          <tbody>
+            ${sites.map((s) => `<tr>
+              <td style="font-weight:600">${s.name}</td>
+              <td style="color:#6b7280">${s.url}</td>
+              <td><span class="badge ${s.status === "connected" ? "badge-green" : "badge-red"}">${s.status === "connected" ? "Conectado" : "Erro"}</span></td>
+              <td>${s.articles}</td>
+              <td style="color:#6b7280">${F.ago(s.lastSync)}</td>
+            </tr>`).join("") || `<tr><td colspan="5" class="empty">Nenhum site conectado</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sites WordPress — PIXELPRESS</title>
+  <link rel="icon" href="assets/pixelpress-icon.png">
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="__variable_231f96 __variable_532bb9 __variable_4dc837 font-sans">
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const shell = UI.mountShell({
+    active: "sites-wordpress.html",
+    title: "Sites WordPress",
+    subtitle: "Conecte seus sites para publicação automática",
+    actions: `<button class="btn btn-primary btn-sm" id="newSite">${UI.icon("plus")} Adicionar site</button>`,
+  });
+  if (!shell) return;
+  const { user, plan } = shell;
+  const I = UI.icon, F = UI.fmt;
+
+  function render() {
+    const sites = WB.list("sites", user.id);
+    shell.content.innerHTML = `
+      <div class="card card-pad" style="margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+        <div>
+          <p style="font-size:.85rem;font-weight:700">${sites.length} de ${plan.maxSites} site(s) conectado(s) no plano ${plan.name}</p>
+          <p style="font-size:.78rem;color:#6b7280;margin-top:.2rem">A publicação usa a REST API do WordPress com senha de aplicação.</p>
+        </div>
+        <div class="progress" style="width:200px"><span style="width:${Math.min(100, Math.round(sites.length / plan.maxSites * 100))}%"></span></div>
+      </div>
+
+      <div class="grid-2">
+        ${sites.map((s) => `
+          <div class="card card-pad">
+            <div class="flex items-start justify-between" style="gap:.75rem">
+              <div class="flex items-start gap-3" style="min-width:0">
+                <div style="width:38px;height:38px;border-radius:.6rem;background:linear-gradient(135deg,#ede9fe,#fae8ff);display:flex;align-items:center;justify-content:center;color:#E0A100;flex-shrink:0">${I("globe", "h-5 w-5")}</div>
+                <div style="min-width:0">
+                  <p style="font-weight:700;font-size:.95rem">${s.name}</p>
+                  <p style="font-size:.78rem;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.url}</p>
+                </div>
+              </div>
+              <span class="badge ${s.status === "connected" ? "badge-green" : "badge-red"}">${s.status === "connected" ? "Conectado" : "Erro"}</span>
+            </div>
+            <div class="flex items-center justify-between" style="margin-top:1rem;font-size:.78rem;color:#6b7280">
+              <span>${s.articles} artigos publicados</span>
+              <span>Sync ${F.ago(s.lastSync)}</span>
+            </div>
+            <div class="flex items-center gap-2" style="margin-top:1rem">
+              <button class="btn btn-outline btn-sm" data-test="${s.id}">${I("refresh")} Testar conexão</button>
+              <button class="btn btn-outline btn-sm" data-open="${s.id}">${I("external")} Abrir site</button>
+              <button class="btn btn-ghost btn-icon" data-del="${s.id}" title="Remover" style="color:#dc2626;margin-left:auto">${I("trash", "h-4 w-4")}</button>
+            </div>
+          </div>`).join("") || `<div class="card empty" style="grid-column:1/-1">${I("globe")}<p style="font-weight:600;color:#374151">Nenhum site conectado</p><p style="font-size:.85rem">Adicione seu primeiro site WordPress para publicar artigos.</p></div>`}
+      </div>
+
+      <div class="card card-pad" style="margin-top:1.25rem;background:linear-gradient(135deg,#FFFAEB,#FFF6DC);border-color:#FFF1C9">
+        <h3 style="font-weight:700;font-size:.95rem;margin-bottom:.5rem">Como gerar a senha de aplicação</h3>
+        <ol style="font-size:.82rem;color:#6b7280;line-height:1.7;padding-left:1.1rem;list-style:decimal">
+          <li>No WordPress, vá em <strong>Usuários → Perfil</strong></li>
+          <li>Role até <strong>Senhas de aplicação</strong></li>
+          <li>Crie uma senha chamada “PIXELPRESS” e copie o valor</li>
+          <li>Cole aqui junto com a URL do site</li>
+        </ol>
+      </div>
+    `;
+
+    document.querySelectorAll("[data-test]").forEach((b) => b.addEventListener("click", async () => {
+      b.disabled = true; b.innerHTML = `${I("refresh")} Testando...`;
+      await new Promise((r) => setTimeout(r, 900));
+      const s = WB.list("sites", user.id).find((x) => x.id === b.dataset.test);
+      const ok = s.status === "connected";
+      WB.update("sites", s.id, { lastSync: WB.iso(Date.now()) });
+      ok ? UI.toast.success("Conexão OK — REST API respondeu 200.") : UI.toast.error("Falha na conexão: verifique URL e senha de aplicação.");
+      render();
+    }));
+    document.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => {
+      const s = WB.list("sites", user.id).find((x) => x.id === b.dataset.open);
+      window.open(s.url, "_blank", "noopener");
+    }));
+    document.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
+      if (!confirm("Remover este site? Os artigos publicados permanecem no WordPress.")) return;
+      WB.remove("sites", b.dataset.del);
+      UI.toast.success("Site removido.");
+      render();
+    }));
+  }
+
+  document.getElementById("newSite").addEventListener("click", () => {
+    const sites = WB.list("sites", user.id);
+    if (sites.length >= plan.maxSites) {
+      UI.toast.error(`Seu plano ${plan.name} permite ${plan.maxSites} site(s). Faça upgrade para adicionar mais.`);
+      return;
+    }
+    UI.openModal(`
+      <div class="modal-head">
+        <h3 style="font-weight:700;font-size:1.1rem">Adicionar site WordPress</h3>
+        <p style="font-size:.82rem;color:#6b7280;margin-top:.2rem">Usamos a REST API do WordPress. Nada é publicado sem a sua confirmação.</p>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:.85rem">
+        <div><label class="label" style="display:block;margin-bottom:.35rem">Nome do site</label><input class="input" id="mName" placeholder="Ex.: Meu blog"></div>
+        <div><label class="label" style="display:block;margin-bottom:.35rem">URL</label><input class="input" id="mUrl" placeholder="https://meusite.com.br"></div>
+        <div><label class="label" style="display:block;margin-bottom:.35rem">Usuário do WordPress</label><input class="input" id="mUser" placeholder="admin"></div>
+        <div><label class="label" style="display:block;margin-bottom:.35rem">Senha de aplicação</label><input class="input" id="mPass" type="password" placeholder="xxxx xxxx xxxx xxxx xxxx xxxx"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" id="mCancel">Cancelar</button>
+        <button class="btn btn-primary" id="mSave">Conectar site</button>
+      </div>`, (box) => {
+      box.querySelector("#mCancel").addEventListener("click", UI.closeModal);
+      box.querySelector("#mSave").addEventListener("click", async () => {
+        const name = box.querySelector("#mName").value.trim();
+        const url = box.querySelector("#mUrl").value.trim();
+        const pass = box.querySelector("#mPass").value.trim();
+        if (!name || !/^https?:\/\//.test(url) || !pass) { UI.toast.error("Informe nome, URL válida e senha de aplicação."); return; }
+        const userWp = box.querySelector("#mUser").value.trim();
+        const btn = box.querySelector("#mSave");
+        btn.disabled = true; btn.textContent = "Testando conexão...";
+        await new Promise((r) => setTimeout(r, 1000));
+        WB.add("sites", { id: WB.uid("s_"), userId: user.id, name, url: url.replace(/\/$/, ""), wpUser: userWp, status: "connected", articles: 0, lastSync: WB.iso(Date.now()) });
+        UI.closeModal();
+        UI.toast.success("Site conectado com sucesso!");
+        render();
+      });
+    });
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

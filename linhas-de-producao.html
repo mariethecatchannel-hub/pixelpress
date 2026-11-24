@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Linhas de Produção — PIXELPRESS</title>
+  <link rel="icon" href="assets/pixelpress-icon.png">
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="__variable_231f96 __variable_532bb9 __variable_4dc837 font-sans">
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const shell = UI.mountShell({
+    active: "linhas-de-producao.html",
+    title: "Linhas de Produção",
+    subtitle: "Automatize a criação de artigos 24/7",
+    actions: `<button class="btn btn-primary btn-sm" id="newPipe">${UI.icon("plus")} Nova linha</button>`,
+  });
+  if (!shell) return;
+  const { user } = shell;
+  const I = UI.icon, F = UI.fmt;
+  const sites = WB.list("sites", user.id);
+  const FREQ = { daily: "Diária", "twice-weekly": "2x por semana", weekly: "Semanal", monthly: "Mensal" };
+
+  function render() {
+    const pipelines = WB.list("pipelines", user.id);
+    shell.content.innerHTML = `
+      <div class="stat-grid" style="margin-bottom:1.25rem">
+        <div class="stat"><div class="stat-label">${I("factory", "h-4 w-4")} Linhas criadas</div><div class="stat-value">${pipelines.length}</div></div>
+        <div class="stat"><div class="stat-label">${I("play", "h-4 w-4")} Ativas</div><div class="stat-value">${pipelines.filter(p => p.active).length}</div></div>
+        <div class="stat"><div class="stat-label">${I("book", "h-4 w-4")} Artigos produzidos</div><div class="stat-value">${F.num(pipelines.reduce((s, p) => s + p.produced, 0))}</div></div>
+        <div class="stat"><div class="stat-label">${I("clock", "h-4 w-4")} Próxima execução</div><div class="stat-value" style="font-size:1.1rem">${pipelines.filter(p => p.active && p.nextRun).sort((a,b)=>new Date(a.nextRun)-new Date(b.nextRun))[0] ? F.dateTime(pipelines.filter(p => p.active && p.nextRun).sort((a,b)=>new Date(a.nextRun)-new Date(b.nextRun))[0].nextRun) : "—"}</div></div>
+      </div>
+
+      <div id="pipeList" style="display:flex;flex-direction:column;gap:1rem"></div>
+    `;
+
+    const list = document.getElementById("pipeList");
+    if (!pipelines.length) {
+      list.innerHTML = `<div class="card empty">${I("factory")}<p style="font-weight:600;color:#374151">Nenhuma linha de produção</p><p style="font-size:.85rem;margin-top:.25rem">Crie uma linha para gerar e publicar artigos automaticamente.</p></div>`;
+      return;
+    }
+
+    list.innerHTML = pipelines.map((p) => {
+      const site = sites.find((s) => s.id === p.siteId);
+      return `<div class="card card-pad">
+        <div class="flex items-start justify-between" style="gap:1rem;flex-wrap:wrap">
+          <div style="min-width:0">
+            <div class="flex items-center gap-2">
+              <h3 style="font-weight:700;font-size:1rem">${p.name}</h3>
+              <span class="badge ${p.active ? "badge-green" : "badge-gray"}">${p.active ? "Ativa" : "Pausada"}</span>
+            </div>
+            <p style="font-size:.8rem;color:#6b7280;margin-top:.25rem">Tema: “${p.topic}” · ${p.type} · tom ${p.tone}</p>
+            <p style="font-size:.75rem;color:#9ca3af;margin-top:.2rem">${site ? site.name : "sem site"} · ${FREQ[p.frequency] || p.frequency} às ${p.time} · ${p.produced} artigos produzidos</p>
+            <p style="font-size:.75rem;color:#9ca3af;margin-top:.15rem">Última execução: ${F.ago(p.lastRun)}${p.nextRun ? " · próxima: " + F.dateTime(p.nextRun) : ""}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="btn btn-outline btn-sm" data-run="${p.id}">${I("play")} Executar</button>
+            <button class="btn btn-ghost btn-icon" data-toggle="${p.id}" title="${p.active ? "Pausar" : "Ativar"}">${I(p.active ? "pause" : "play", "h-4 w-4")}</button>
+            <button class="btn btn-ghost btn-icon" data-del="${p.id}" title="Excluir" style="color:#dc2626">${I("trash", "h-4 w-4")}</button>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+
+    list.querySelectorAll("[data-toggle]").forEach((b) => b.addEventListener("click", () => {
+      const p = WB.list("pipelines", user.id).find((x) => x.id === b.dataset.toggle);
+      WB.update("pipelines", p.id, { active: !p.active, nextRun: !p.active ? WB.iso(Date.now() + 86400000) : null });
+      UI.toast.success(p.active ? "Linha pausada." : "Linha ativada.");
+      render();
+    }));
+    list.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
+      if (!confirm("Excluir esta linha de produção?")) return;
+      WB.remove("pipelines", b.dataset.del);
+      UI.toast.success("Linha excluída.");
+      render();
+    }));
+    list.querySelectorAll("[data-run]").forEach((b) => b.addEventListener("click", async () => {
+      const p = WB.list("pipelines", user.id).find((x) => x.id === b.dataset.run);
+      b.disabled = true;
+      b.innerHTML = `${I("refresh", "h-4 w-4")} Executando...`;
+      await new Promise((r) => setTimeout(r, 1200));
+      const art = WB.generateArticle({ topic: p.topic, type: p.type, tone: p.tone, siteId: p.siteId });
+      WB.add("articles", Object.assign({ userId: user.id }, art, { source: "pipeline" }));
+      WB.update("pipelines", p.id, { produced: p.produced + 1, lastRun: WB.iso(Date.now()) });
+      UI.toast.success("Linha executada: 1 artigo publicado.");
+      render();
+    }));
+  }
+
+  function openNew() {
+    UI.openModal(`
+      <div class="modal-head">
+        <h3 style="font-weight:700;font-size:1.1rem">Nova linha de produção</h3>
+        <p style="font-size:.82rem;color:#6b7280;margin-top:.2rem">A linha gera e publica artigos automaticamente no intervalo escolhido.</p>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:.85rem">
+        <div><label class="label" style="display:block;margin-bottom:.35rem">Nome da linha</label><input class="input" id="mName" placeholder="Ex.: Receitas diárias"></div>
+        <div><label class="label" style="display:block;margin-bottom:.35rem">Tema</label><input class="input" id="mTopic" placeholder="Ex.: receitas caseiras fáceis"></div>
+        <div class="grid md:grid-cols-2" style="gap:.85rem">
+          <div><label class="label" style="display:block;margin-bottom:.35rem">Tipo</label><select class="input" id="mType">${WB.ARTICLE_TYPES.map(t => `<option>${t}</option>`).join("")}</select></div>
+          <div><label class="label" style="display:block;margin-bottom:.35rem">Tom</label><select class="input" id="mTone">${WB.TONES.map(t => `<option>${t}</option>`).join("")}</select></div>
+        </div>
+        <div class="grid md:grid-cols-2" style="gap:.85rem">
+          <div><label class="label" style="display:block;margin-bottom:.35rem">Site</label><select class="input" id="mSite">${sites.map(s => `<option value="${s.id}">${s.name}</option>`).join("") || `<option value="">—</option>`}</select></div>
+          <div><label class="label" style="display:block;margin-bottom:.35rem">Frequência</label><select class="input" id="mFreq">
+            <option value="daily">Diária</option><option value="twice-weekly">2x por semana</option><option value="weekly" selected>Semanal</option><option value="monthly">Mensal</option>
+          </select></div>
+        </div>
+        <div><label class="label" style="display:block;margin-bottom:.35rem">Horário</label><input class="input" id="mTime" type="time" value="09:00"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" id="mCancel">Cancelar</button>
+        <button class="btn btn-primary" id="mSave">Criar linha</button>
+      </div>`, (box) => {
+      box.querySelector("#mCancel").addEventListener("click", UI.closeModal);
+      box.querySelector("#mSave").addEventListener("click", () => {
+        const name = box.querySelector("#mName").value.trim();
+        const topic = box.querySelector("#mTopic").value.trim();
+        if (!name || !topic) { UI.toast.error("Informe nome e tema."); return; }
+        WB.add("pipelines", {
+          id: WB.uid("p_"), userId: user.id, name, topic,
+          type: box.querySelector("#mType").value, tone: box.querySelector("#mTone").value,
+          siteId: box.querySelector("#mSite").value, frequency: box.querySelector("#mFreq").value,
+          time: box.querySelector("#mTime").value, active: true, produced: 0,
+          lastRun: null, nextRun: WB.iso(Date.now() + 86400000),
+        });
+        UI.closeModal();
+        UI.toast.success("Linha de produção criada.");
+        render();
+      });
+    });
+  }
+
+  document.getElementById("newPipe").addEventListener("click", openNew);
+  render();
+})();
+</script>
+</body>
+</html>
