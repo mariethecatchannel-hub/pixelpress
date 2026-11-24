@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="pt-BR" data-accent="slate" data-look="minimal" data-design="report-schematic"><head><meta charset="utf-8"><title>PixelPress — Relatório técnico: funções estéticas e correções</title><link rel="stylesheet" href="system.css"><style id="page-numbers">@page { size: A4; margin: 0.7in 0.75in 0.6in; @bottom-right { content: counter(page) "/" counter(pages); font-family: "Inter"; font-size: 9px; color: #8b9099; } }</style></head>
+<body class="doc genre-report relaxed">
+<p class="running">PixelPress · Relatório técnico interno</p>
+
+<div class="doc-head">
+  <div>
+    <p class="kicker">PixelPress · Relatório técnico interno</p>
+    <h1>Funções apenas estéticas e como torná-las funcionais</h1>
+  </div>
+  <div class="meta">24 de novembro de 2026<br>Auditoria do clone estático<br>Destinatário: proprietário do produto</div>
+</div>
+
+<div class="summary-band">
+  <p class="lead">O clone tem 14 páginas e 45 funções mapeadas como estéticas em 9 áreas. Nada aqui conversa com servidor, IA ou WordPress. Toda a lógica vive em <code>assets/store.js</code>, um banco JSON no localStorage do navegador (chave <code>pixelpress_clone_db_v1</code>).</p>
+  <div class="tiles">
+    <div class="tile"><span class="value" style="white-space: nowrap;">14</span><span class="label">Páginas no clone</span></div>
+    <div class="tile"><span class="value" style="white-space: nowrap;">45</span><span class="label">Funções estéticas mapeadas</span></div>
+    <div class="tile"><span class="value" style="white-space: nowrap;">9</span><span class="label">Áreas afetadas</span></div>
+    <div class="tile"><span class="value" style="white-space: nowrap;">0</span><span class="label">Chamadas a servidor</span></div>
+  </div>
+</div>
+
+<h2>Como ler este relatório</h2>
+<p>Cada item segue o mesmo formato, para permitir abrir chamado direto a partir do texto:</p>
+<ul>
+  <li><b>O que a pessoa vê hoje</b> — o comportamento na tela, como o usuário percebe.</li>
+  <li><b>O que acontece por dentro</b> — o que o código realmente faz, com arquivo e linha quando relevante.</li>
+  <li><b>Como corrigir</b> — a alteração concreta de arquitetura ou de código.</li>
+</ul>
+<p>Os 9 blocos são: autenticação (7 itens), criação de artigo (8), linhas de produção (5), feeds RSS (5), sites WordPress (6), chaves de API (5), planos e cobrança (6), perfil e dados (5) e painel admin (3 itens abertos, além do que já funciona). A integração com navegador antidetect é tratada à parte, no item 11.</p>
+
+<div class="callout">
+  <p><b>Diagnóstico em uma frase.</b> O clone é uma maquete de alta fidelidade: a interface, os fluxos e a navegação são reais, mas nenhum efeito colateral persiste fora do navegador que o executou. O caminho para 100% funcional é substituir, área por área, o <code>setTimeout</code> por uma chamada de API e o objeto do <code>store.js</code> por uma linha no Postgres.</p>
+</div>
+
+<div style="break-before: auto;"></div>
+
+<h2>2. Autenticação — 7 itens</h2>
+
+<div class="qa">
+  <div class="q"><span class="n">A1</span><span>Login compara senha em texto claro no localStorage</span></div>
+  <div class="a">
+    <p><b>Vê:</b> login funciona imediatamente, sem rede, e funciona offline.</p>
+    <p><b>Por dentro:</b> a senha é gravada no objeto de usuário do banco JSON e comparada por igualdade de string no cliente. Qualquer pessoa abre o DevTools e lê todas as senhas.</p>
+    <p><b>Correção:</b> <code>POST /api/auth/login</code> com hash Argon2id no servidor e sessão em cookie <code>httpOnly</code> + <code>Secure</code> + <code>SameSite=Lax</code>. O cliente nunca recebe nem guarda senha.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">A2</span><span>Cadastro sem verificação de e-mail</span></div>
+  <div class="a">
+    <p><b>Vê:</b> cadastra e entra direto.</p>
+    <p><b>Por dentro:</b> insere o objeto no array de usuários e abre a sessão local.</p>
+    <p><b>Correção:</b> <code>POST /api/auth/signup</code> cria o usuário com <code>email_verified = false</code> e dispara e-mail de confirmação com token de uso único; o login só libera recursos após a confirmação.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">A3</span><span>“Esqueceu a senha” é um temporizador</span></div>
+  <div class="a">
+    <p><b>Vê:</b> a tela pensa por um instante e mostra “link enviado”.</p>
+    <p><b>Por dentro:</b> <code>setTimeout(700)</code> e uma mensagem fixa em <code>forgot-password.html</code> linha 65. Nenhum e-mail é enviado.</p>
+    <p><b>Correção:</b> <code>POST /api/auth/forgot</code> gera token de 1 uso, válido por 30 minutos, e envia por e-mail; <code>POST /api/auth/reset</code> consome o token e invalida as sessões do usuário.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">A4</span><span>A sessão nunca expira</span></div>
+  <div class="a">
+    <p><b>Vê:</b> fica logado para sempre, em qualquer aba.</p>
+    <p><b>Por dentro:</b> a chave de sessão no localStorage não tem data de validade.</p>
+    <p><b>Correção:</b> access token JWT curto (15 min) + refresh token revogável por dispositivo, guardado em tabela <code>sessions</code>; o refresh renova o access e pode ser revogado individualmente.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">A5</span><span>Logout só apaga a chave local</span></div>
+  <div class="a">
+    <p><b>Vê:</b> volta para a tela de login.</p>
+    <p><b>Por dentro:</b> remove a chave de sessão do localStorage; o token continua válido em qualquer outro lugar onde tenha sido copiado.</p>
+    <p><b>Correção:</b> <code>POST /api/auth/logout</code> apaga o cookie e marca o refresh token como revogado no banco.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">A6</span><span>Admin é uma comparação de e-mail</span></div>
+  <div class="a">
+    <p><b>Vê:</b> com a conta demo, aparece o link do painel admin.</p>
+    <p><b>Por dentro:</b> <code>email === 'demo@pixelpress.com.br'</code> decide se o menu admin aparece. A regra está no cliente e não há checagem no acesso às telas.</p>
+    <p><b>Correção:</b> coluna <code>users.role</code> no banco; middleware <code>requireRole('admin')</code> em todas as rotas <code>/api/admin/*</code>; o front apenas esconde o menu, nunca autoriza.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">A7</span><span>Sem 2FA e sem bloqueio por tentativas</span></div>
+  <div class="a">
+    <p><b>Vê:</b> pode-se tentar senha infinitas vezes.</p>
+    <p><b>Por dentro:</b> não existe contador de tentativas nem segundo fator.</p>
+    <p><b>Correção:</b> TOTP (Google Authenticator) opcional por usuário, com códigos de recuperação; rate limit por IP + e-mail (5 tentativas / 15 min) e bloqueio temporário com registro no log de auditoria.</p>
+  </div>
+</div>
+
+<div style="break-before: auto;"></div>
+
+<h2>3. Criação de artigo — 8 itens</h2>
+
+<div class="qa">
+  <div class="q"><span class="n">B1</span><span>O texto não é gerado por IA</span></div>
+  <div class="a">
+    <p><b>Vê:</b> preenche o tema, clica em gerar e recebe um “artigo”.</p>
+    <p><b>Por dentro:</b> <code>WB.generateArticle</code> em <code>store.js</code> linha 191 monta um objeto com título de template e um número aleatório de palavras (900 + random até 1800). Não há chamada a modelo nenhum.</p>
+    <p><b>Correção:</b> job de LLM em duas etapas — outline e depois corpo em markdown, convertido para HTML — executado no servidor; gravar <code>content_html</code> na tabela <code>articles</code>.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">B2</span><span>A barra de progresso é decorativa</span></div>
+  <div class="a">
+    <p><b>Vê:</b> cinco etapas com nomes plausíveis passando na tela.</p>
+    <p><b>Por dentro:</b> cinco <code>setTimeout(620)</code> com textos fixos em <code>criar-artigo.html</code> linha 137. O progresso não tem relação com trabalho real.</p>
+    <p><b>Correção:</b> progresso real por etapa, enviado do servidor via SSE (<code>GET /api/jobs/:id/stream</code>); a barra reflete o estado do job.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">B3</span><span>O corpo do artigo não existe</span></div>
+  <div class="a">
+    <p><b>Vê:</b> o artigo “criado” aparece no histórico, e o preview mostra um texto qualquer.</p>
+    <p><b>Por dentro:</b> o objeto salvo não tem corpo; o preview do histórico mostra texto fixo (“Este é um preview simulado”).</p>
+    <p><b>Correção:</b> gravar o corpo completo em <code>content_html</code> e renderizar o preview a partir dele, com editor para revisão antes de publicar.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">B4</span><span>Títulos vêm de um dicionário de 8 padrões</span></div>
+  <div class="a">
+    <p><b>Vê:</b> títulos repetidos entre artigos de temas diferentes.</p>
+    <p><b>Por dentro:</b> o título é sorteado de um array de 8 templates com o tema interpolado.</p>
+    <p><b>Correção:</b> gerar 3 títulos pelo LLM dentro do job, mostrar as opções ao usuário e salvar o escolhido.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">B5</span><span>Contagem de palavras é inventada</span></div>
+  <div class="a">
+    <p><b>Vê:</b> uma contagem de palavras no cartão do artigo.</p>
+    <p><b>Por dentro:</b> o número é o sorteio de <code>WB.generateArticle</code>, não uma contagem.</p>
+    <p><b>Correção:</b> contar as palavras de <code>content_html</code> no servidor ao salvar (e de novo ao editar). Este é um dos dois itens resolvíveis só no front.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">B6</span><span>“Copiar HTML” não copia nada</span></div>
+  <div class="a">
+    <p><b>Vê:</b> um toast “HTML copiado”.</p>
+    <p><b>Por dentro:</b> o toast é “simulado”; a área de transferência não é tocada.</p>
+    <p><b>Correção:</b> <code>navigator.clipboard.writeText(content_html)</code> com fallback e confirmação só após o <i>promise</i> resolver. Segundo item resolvível só no front.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">B7</span><span>O checkbox de imagem não gera imagem</span></div>
+  <div class="a">
+    <p><b>Vê:</b> marca “incluir imagem de destaque” e o artigo sai sem imagem.</p>
+    <p><b>Por dentro:</b> a flag é lida e descartada.</p>
+    <p><b>Correção:</b> gerar imagem (modelo de imagem ou banco licenciado), armazenar e subir para o WordPress via <code>POST /wp-json/wp/v2/media</code>, vinculando como imagem destacada.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">B8</span><span>Uso e custo são números inventados</span></div>
+  <div class="a">
+    <p><b>Vê:</b> consumo de tokens e custo no painel.</p>
+    <p><b>Por dentro:</b> valor fixo no seed do banco JSON.</p>
+    <p><b>Correção:</b> tabela <code>usage_counters</code> debitada no servidor a cada job, com tokens de entrada e saída reais informados pelo provedor.</p>
+  </div>
+</div>
+
+<div style="break-before: auto;"></div>
+
+<h2>4. Linhas de produção — 5 itens</h2>
+
+<div class="qa">
+  <div class="q"><span class="n">C1</span><span>Frequência e horário são decorativos</span></div>
+  <div class="a">
+    <p><b>Vê:</b> escolhe “diário às 8h” e salva.</p>
+    <p><b>Por dentro:</b> os campos <code>frequency</code> e <code>time</code> são gravados no objeto e nada os lê; nenhum cron existe.</p>
+    <p><b>Correção:</b> cron repeatable no BullMQ; ao salvar a linha, cria ou atualiza o job agendado no servidor com a expressão de horário correspondente.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">C2</span><span>“Executar” cria um artigo falso</span></div>
+  <div class="a">
+    <p><b>Vê:</b> um spinner de 1,2 s e o artigo aparecendo no histórico.</p>
+    <p><b>Por dentro:</b> <code>setTimeout(1200)</code> seguido de um objeto de artigo fabricado no cliente.</p>
+    <p><b>Correção:</b> <code>POST /api/pipelines/:id/run</code> enfileira o job e devolve <code>run_id</code>; a interface acompanha o progresso por SSE.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">C3</span><span>Não há histórico de execuções</span></div>
+  <div class="a">
+    <p><b>Vê:</b> nenhuma lista de rodadas, erros ou duração.</p>
+    <p><b>Por dentro:</b> a execução não é registrada em lugar nenhum.</p>
+    <p><b>Correção:</b> tabela <code>pipeline_runs</code> (início, fim, status, erro, artigo gerado); tela de histórico com filtro por linha e por status.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">C4</span><span>Rodar duas vezes gera dois artigos</span></div>
+  <div class="a">
+    <p><b>Vê:</b> clicar duas vezes em executar duplica o artigo.</p>
+    <p><b>Por dentro:</b> não existe chave de idempotência; cada clique gera um objeto novo.</p>
+    <p><b>Correção:</b> chave de idempotência por linha e por janela (ex.: <code>pipeline_id + data</code>), com índice único em <code>pipeline_runs</code>; segunda execução na mesma janela é ignorada.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">C5</span><span>Próxima execução calculada no cliente</span></div>
+  <div class="a">
+    <p><b>Vê:</b> uma contagem “próxima execução” na tela.</p>
+    <p><b>Por dentro:</b> cálculo feito na tela a partir do relógio do navegador; fuso e aba fechada mudam o resultado.</p>
+    <p><b>Correção:</b> calcular e devolver <code>next_run_at</code> do servidor (timezone da linha, não do navegador).</p>
+  </div>
+</div>
+
+<h2>5. Feeds RSS — 5 itens</h2>
+
+<div class="qa">
+  <div class="q"><span class="n">D1</span><span>“Buscar agora” não busca</span></div>
+  <div class="a">
+    <p><b>Vê:</b> o número de itens do feed sobe a cada clique.</p>
+    <p><b>Por dentro:</b> <code>setTimeout(800)</code> e soma <code>Math.random()*4</code> ao contador, em <code>feeds-rss.html</code> linha 94.</p>
+    <p><b>Correção:</b> <code>fetch</code> do XML com proxy CORS próprio e <code>rss-parser</code> no servidor; gravar os itens lidos em <code>feed_items</code>.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">D2</span><span>Não há polling</span></div>
+  <div class="a">
+    <p><b>Vê:</b> o feed só “atualiza” quando alguém clica.</p>
+    <p><b>Por dentro:</b> nenhum agendador lê as URLs cadastradas.</p>
+    <p><b>Correção:</b> worker em intervalo fixo (a cada 30 min) que percorre todos os feeds ativos.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">D3</span><span>Sem deduplicação</span></div>
+  <div class="a">
+    <p><b>Vê:</b> o mesmo item entra várias vezes.</p>
+    <p><b>Por dentro:</b> nada identifica um item já visto.</p>
+    <p><b>Correção:</b> dedupe por GUID do item e, na falta dele, pelo link; índice único em <code>(feed_id, guid)</code>.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">D4</span><span>Sem filtro por palavra-chave</span></div>
+  <div class="a">
+    <p><b>Vê:</b> todos os itens entram, inclusive assuntos fora do tema.</p>
+    <p><b>Por dentro:</b> o campo de filtro não existe no fluxo.</p>
+    <p><b>Correção:</b> coluna <code>keywords</code> no feed; o worker só aceita itens cujo título ou resumo contenha uma das palavras (comparação sem acento e sem caixa).</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">D5</span><span>Não gera artigo a partir do feed</span></div>
+  <div class="a">
+    <p><b>Vê:</b> itens listados, mas nada é produzido.</p>
+    <p><b>Por dentro:</b> o item é salvo no contador e o fluxo termina ali.</p>
+    <p><b>Correção:</b> enfileirar o job de geração (item 3) a partir do item aprovado, usando título e resumo como contexto.</p>
+  </div>
+</div>
+
+<div style="break-before: auto;"></div>
+
+<h2>6. Sites WordPress — 6 itens</h2>
+
+<div class="qa">
+  <div class="q"><span class="n">E1</span><span>“Testar conexão” é um temporizador duplo</span></div>
+  <div class="a">
+    <p><b>Vê:</b> o botão gira e depois aparece “conectado”.</p>
+    <p><b>Por dentro:</b> <code>setTimeout(900)</code> e <code>setTimeout(1000)</code> em <code>sites-wordpress.html</code> linhas 76 e 125; nenhuma requisição é feita.</p>
+    <p><b>Correção:</b> <code>GET /wp-json/wp/v2/users/me</code> com Application Password; sucesso só com 200 e <code>id</code> na resposta.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">E2</span><span>Nada é publicado de verdade</span></div>
+  <div class="a">
+    <p><b>Vê:</b> “publicado” e o artigo some da fila.</p>
+    <p><b>Por dentro:</b> o status do artigo muda no objeto local.</p>
+    <p><b>Correção:</b> <code>POST /wp-json/wp/v2/posts</code> com título, <code>content</code>, <code>status</code> e <code>featured_media</code>; guardar o <code>post_id</code> devolvido para permitir editar ou despublicar.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">E3</span><span>Senha de aplicação em texto claro no navegador</span></div>
+  <div class="a">
+    <p><b>Vê:</b> a senha fica salva e é reexibida ao editar o site.</p>
+    <p><b>Por dentro:</b> a senha de aplicação é gravada no JSON do localStorage.</p>
+    
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">E4</span><span>Contador de artigos incrementado na mão</span></div>
+  <div class="a">
+    <p><b>Vê:</b> o número de artigos do site sobe mesmo quando a publicação falha.</p>
+    <p><b>Por dentro:</b> <code>articles_count += 1</code> no cliente após o temporizador.</p>
+    <p><b>Correção:</b> contar publicações com sucesso registradas no banco, consultando o site via REST quando necessário.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">E5</span><span>Status “conectado/erro” vem fixo do seed</span></div>
+  <div class="a">
+    <p><b>Vê:</b> um site aparece conectado mesmo com URL errada.</p>
+    <p><b>Por dentro:</b> o status é um campo do objeto inicial.</p>
+    <p><b>Correção:</b> status derivado do último health-check (ok, falha de autenticação, timeout, 404) com data e mensagem de erro.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">E6</span><span>Publicar em vários perfis de navegador não existe</span></div>
+  <div class="a">
+    <p><b>Vê:</b> publica sempre em um único site, de um único navegador.</p>
+    <p><b>Por dentro:</b> não há integração com o navegador antidetect do original (ixBrowser).</p>
+    <p><b>Correção:</b> implementar a seção de integração com o Fox descrita no item 11 e usar o adaptador <code>BrowserProfileClient</code> para distribuir publicações por perfil.</p>
+  </div>
+</div>
+
+<h2>7. Chaves de API — 5 itens</h2>
+
+<div class="qa">
+  <div class="q"><span class="n">F1</span><span>Chave gerada com Math.random() no navegador</span></div>
+  <div class="a">
+    <p><b>Vê:</b> clica em “criar chave” e recebe <code>pp_live_…</code>.</p>
+    <p><b>Por dentro:</b> <code>Math.random()</code> em <code>chaves-de-api.html</code> linha 106. Não é criptograficamente segura e é gerada no cliente.</p>
+    
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">F2</span><span>O endpoint do exemplo não existe</span></div>
+  <div class="a">
+    <p><b>Vê:</b> um exemplo <code>curl</code> para <code>api.pixelpress.com.br</code>.</p>
+    <p><b>Por dentro:</b> o domínio e a rota não respondem; é apenas texto na tela.</p>
+    <p><b>Correção:</b> publicar <code>GET /v1/articles</code> com middleware de API key (header <code>Authorization: Bearer pp_live_…</code>), paginação e escopo por usuário.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">F3</span><span>Último uso é data fixa</span></div>
+  <div class="a">
+    <p><b>Vê:</b> todas as chaves mostram a mesma data de último uso.</p>
+    <p><b>Por dentro:</b> valor de seed que nunca muda.</p>
+    <p><b>Correção:</b> atualizar <code>last_used_at</code> no middleware a cada requisição autenticada.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">F4</span><span>Revogar só remove do array</span></div>
+  <div class="a">
+    <p><b>Vê:</b> a chave desaparece da lista.</p>
+    <p><b>Por dentro:</b> <code>splice</code> no array local; a chave continuaria válida se existisse um servidor.</p>
+    <p><b>Correção:</b> <code>DELETE /api/keys/:id</code> marca <code>revoked_at</code>; o middleware rejeita qualquer chave revogada e registra a tentativa.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">F5</span><span>Chaves de IA salvas e nunca lidas</span></div>
+  <div class="a">
+    <p><b>Vê:</b> campo para OpenAI e Gemini.</p>
+    <p><b>Por dentro:</b> as chaves são gravadas no localStorage e nenhum código as usa; o gerador (item 3) não chama provedor nenhum.</p>
+    <p><b>Correção:</b> o gerador usa a chave do usuário (cifrada no servidor) e valida ao salvar com um ping ao provedor; erro de chave inválida aparece no formulário.</p>
+  </div>
+</div>
+
+<div style="break-before: auto;"></div>
+
+<h2>8. Planos e cobrança — 6 itens</h2>
+<p>Planos do produto: SIMPLE R$ 29,90, BASIC R$ 49,90, PRO R$ 89,90 e ADVANCED R$ 109,90 por mês.</p>
+
+<div class="qa">
+  <div class="q"><span class="n">G1</span><span>Trocar de plano é um confirm()</span></div>
+  <div class="a">
+    <p><b>Vê:</b> confirma e o plano muda na hora.</p>
+    <p><b>Por dentro:</b> <code>confirm()</code> e a escrita de um campo no objeto local. Não há cobrança.</p>
+    <p><b>Correção:</b> checkout Mercado Pago (preapproval para assinatura mensal) e webhook que altera <code>subscriptions.plan_id</code> apenas na confirmação do pagamento.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">G2</span><span>Faturas são linhas fixas do seed</span></div>
+  <div class="a">
+    <p><b>Vê:</b> faturas no histórico.</p>
+    <p><b>Por dentro:</b> são dados de seed; nada é emitido.</p>
+    <p><b>Correção:</b> tabela <code>invoices</code> alimentada pelo webhook do provedor, com valor, período, status e identificador externo.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">G3</span><span>O botão PDF não faz nada</span></div>
+  <div class="a">
+    <p><b>Vê:</b> clica e nenhum arquivo baixa.</p>
+    <p><b>Por dentro:</b> o botão não tem handler.</p>
+    <p><b>Correção:</b> <code>GET /api/invoices/:id/pdf</code> gerando o documento no servidor a partir da fatura salva.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">G4</span><span>Limite do plano validado só no cliente</span></div>
+  <div class="a">
+    <p><b>Vê:</b> um aviso ao passar do limite.</p>
+    <p><b>Por dentro:</b> a checagem está na tela; a geração continua se o usuário chamar o código direto.</p>
+    <p><b>Correção:</b> enforcement no servidor em cada job e cada publicação, lendo o limite do plano na tabela <code>plans</code>.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">G5</span><span>Cupons não são aplicados em lugar nenhum</span></div>
+  <div class="a">
+    <p><b>Vê:</b> cupons cadastrados no admin, mas o checkout não pede código.</p>
+    <p><b>Por dentro:</b> o array de cupons é editável e nunca consultado.</p>
+    <p><b>Correção:</b> validar o cupom no checkout (validade, limite de usos, plano aplicável), debitar <code>uses</code> no webhook de pagamento confirmado e registrar o desconto na fatura.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">G6</span><span>Sem tratamento de inadimplência</span></div>
+  <div class="a">
+    <p><b>Vê:</b> o acesso continua igual mesmo com pagamento atrasado.</p>
+    <p><b>Por dentro:</b> não existe estado de assinatura.</p>
+    <p><b>Correção:</b> estado <code>past_due</code> no webhook, aviso por e-mail e suspensão após 3 dias sem pagamento, com reativação automática ao regularizar.</p>
+  </div>
+</div>
+
+
+
+<h3>O que já funciona dentro do clone</h3>
+<ul>
+  <li>Bônus concedido reflete no dashboard, em planos e no perfil.</li>
+  <li>CRUD de cupons.</li>
+  <li>Logs das ações do admin.</li>
+</ul>
+
+<h3>O que falta</h3>
+
+<div class="qa">
+  <div class="q"><span class="n">H1</span><span>Regras automáticas de bônus salvas e nunca aplicadas</span></div>
+  <div class="a">
+    <p><b>Vê:</b> cria “10% de bônus no cadastro” e nada acontece com novos usuários.</p>
+    <p><b>Por dentro:</b> a regra é gravada em um array; nenhum evento de cadastro a consulta.</p>
+    <p><b>Correção:</b> tabelas <code>bonuses</code> e <code>bonus_rules</code>; disparar em eventos de cadastro, renovação e indicação, com registro em <code>bonuses</code> para auditoria e idempotência.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">H2</span><span>Cupons não entram no checkout</span></div>
+  <div class="a">
+    <p><b>Vê:</b> cupom criado, nenhum efeito na assinatura.</p>
+    <p><b>Por dentro:</b> a tabela de cupons do admin e o checkout do cliente não se conversam — o checkout nem existe.</p>
+    <p><b>Correção:</b> tabela <code>coupons</code> única para os dois lados, consultada pelo checkout (item G5).</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">H3</span><span>Logs cobrem só ações do admin</span></div>
+  <div class="a">
+    <p><b>Vê:</b> log com poucas entradas e nenhuma do sistema.</p>
+    <p><b>Por dentro:</b> só as ações feitas nas telas do admin são registradas; login, geração, publicação e cobrança ficam fora.</p>
+    <p><b>Correção:</b> <code>audit_log</code> global alimentado por todas as rotas (usuário, ação, entidade, IP, antes/depois), com filtros por usuário e período.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">H4</span><span>A aba Usuários não edita, suspende nem reseta senha</span></div>
+  <div class="a">
+    <p><b>Vê:</b> lista de usuários somente leitura.</p>
+    <p><b>Por dentro:</b> não há ações de escrita; nada que exija servidor foi implementado.</p>
+    <p><b>Correção:</b> <code>PATCH /api/admin/users/:id</code> (plano, papel, status), suspensão com revogação de sessões e envio de e-mail de redefinição de senha.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">H5</span><span>Métricas são 4 cards derivados do localStorage</span></div>
+  <div class="a">
+    <p><b>Vê:</b> quatro números no topo do dashboard.</p>
+    <p><b>Por dentro:</b> calculados por contagem de arrays do navegador; não há MRR real, churn ou LTV.</p>
+    <p><b>Correção:</b> agregações no banco (receita por plano e período, cancelamentos, retenção, LTV) em consultas materializadas; atualização diária.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">H6</span><span>Não existe aba de Perfis de publicação</span></div>
+  <div class="a">
+    <p><b>Vê:</b> nenhum lugar para ver ou testar os perfis do navegador antidetect.</p>
+    <p><b>Por dentro:</b> a integração não existe (item 11).</p>
+    <p><b>Correção:</b> aba Perfis com lista vinda do Fox, status e teste de conexão (ver item 11).</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">H7</span><span>Sem visão de cobrança no admin</span></div>
+  <div class="a">
+    <p><b>Vê:</b> nenhuma tela de assinaturas, faturas ou inadimplentes.</p>
+    <p><b>Por dentro:</b> os dados de cobrança não existem no banco.</p>
+    <p><b>Correção:</b> com as tabelas de <code>invoices</code> e <code>subscriptions</code> do item 8, exibir assinaturas por status e ações de reenvio de cobrança.</p>
+  </div>
+</div>
+
+<div style="break-before: auto;"></div>
+
+<h2>10. Perfil e dados — 5 itens</h2>
+
+<div class="qa">
+  <div class="q"><span class="n">I1</span><span>Salvar dados grava no navegador sem reverificar e-mail</span></div>
+  <div class="a">
+    <p><b>Vê:</b> troca o e-mail e ele vale na hora.</p>
+    <p><b>Por dentro:</b> escrita direta no objeto local, sem confirmação.</p>
+    <p><b>Correção:</b> <code>PATCH /api/me</code>; mudança de e-mail gera confirmação no endereço novo e mantém o antigo ativo até a confirmação.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">I2</span><span>Preferências valem só naquele navegador</span></div>
+  <div class="a">
+    <p><b>Vê:</b> abre em outro navegador e as preferências voltam ao padrão.</p>
+    <p><b>Por dentro:</b> preferências no localStorage, sem sincronização.</p>
+    <p><b>Correção:</b> coluna <code>preferences</code> (JSONB) em <code>users</code>, lida no login e aplicada no carregamento.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">I3</span><span>“Restaurar dados demo” apaga o banco local</span></div>
+  <div class="a">
+    <p><b>Vê:</b> tudo volta ao estado inicial.</p>
+    <p><b>Por dentro:</b> remove a chave <code>pixelpress_clone_db_v1</code> e reescreve o seed; em produção isso destruiria dados do usuário.</p>
+    <p><b>Correção:</b> remover o botão em produção (manter apenas em ambiente de demonstração com flag de build).</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">I4</span><span>Sem excluir conta nem exportar dados (LGPD)</span></div>
+  <div class="a">
+    <p><b>Vê:</b> nenhuma opção de sair com os dados ou apagar a conta.</p>
+    <p><b>Por dentro:</b> funcionalidades ausentes.</p>
+    <p><b>Correção:</b> <code>GET /api/me/export</code> (JSON com usuário, artigos, sites, chaves sem segredos, faturas) e <code>DELETE /api/me</code> com anonimização após o prazo legal, ambos com registro em <code>audit_log</code>.</p>
+  </div>
+</div>
+
+<div class="qa">
+  <div class="q"><span class="n">I5</span><span>Cada navegador tem o seu banco</span></div>
+  <div class="a">
+    <p><b>Vê:</b> no celular, a conta parece vazia.</p>
+    <p><b>Por dentro:</b> o “banco” é o localStorage daquele navegador; limpar o cache apaga tudo.</p>
+    <p><b>Correção:</b> Postgres único no servidor; o localStorage passa a guardar apenas o token de sessão.</p>
+  </div>
+</div>
+
+<div style="break-before: auto;"></div>
+
+
+
+<h3>O que foi possível inspecionar no Wordbee</h3>
+<p>A integração do Wordbee fica atrás do login e não pôde ser inspecionada. Nenhuma das 10 bundles públicas menciona “ixbrowser”, e tanto <code>/admin</code> quanto <code>/dashboard</code> respondem <code>307</code> (redirecionamento para a área autenticada). Portanto, o funcionamento abaixo é o do produto antidetect em si, não o da implementação do Wordbee.</p>
+
+<h3>Como o ixBrowser funciona</h3>
+<ul>
+  <li>API local HTTP em <code>127.0.0.1:53200/api/v2/</code>, autenticada pela própria sessão do app instalado na máquina.</li>
+  <li><code>profile-list</code> devolve os perfis com <code>profile_id</code>, nome, grupo e status.</li>
+  <li><code>profile-open</code> abre o perfil e devolve um <code>debugging_address</code> — endereço CDP (Chrome DevTools Protocol) que permite controlar aquele navegador por Playwright ou Selenium.</li>
+  <li>A automação é feita conectando-se ao CDP: cada perfil é um navegador separado com cookies, proxy e fingerprint próprios.</li>
+</ul>
+
+<h3>Como o Fox funciona</h3>
+<ul>
+  <li>API REST em <code>localhost:8000/api/v1/</code>, autenticada por header <code>X-API-Key</code>.</li>
+  <li><code>GET /profiles</code> lista perfis; <code>GET /browsers/active</code> lista os que estão abertos.</li>
+  <li><code>POST /profiles/{id}/launch</code> abre o perfil e <b>não</b> devolve CDP; <code>POST /profiles/{id}/close</code> fecha.</li>
+  <li>Se o perfil já estiver aberto, o lançamento responde <code>409</code>.</li>
+</ul>
+
+<table class="data">
+  <tbody><tr><th>Aspecto</th><th>ixBrowser</th><th>Fox</th></tr>
+  <tr><td>Endereço</td><td>127.0.0.1:53200/api/v2/</td><td>localhost:8000/api/v1/</td></tr>
+  <tr><td>Autenticação</td><td>Sessão local do app</td><td>Header X-API-Key</td></tr>
+  <tr><td>Listar perfis</td><td>profile-list</td><td>GET /profiles</td></tr>
+  <tr><td>Abrir perfil</td><td>profile-open</td><td>POST /profiles/{id}/launch</td></tr>
+  <tr><td>Retorno do lançamento</td><td>debugging_address (CDP)</td><td>Sem CDP</td></tr>
+  <tr><td>Perfis abertos</td><td>Via profile-list (status)</td><td>GET /browsers/active</td></tr>
+  <tr><td>Fechar perfil</td><td>profile-close</td><td>POST /profiles/{id}/close</td></tr>
+  <tr><td>Perfil já aberto</td><td>Tratado pelo status do perfil</td><td>409 no launch</td></tr>
+  <tr><td>Automação</td><td>Playwright/Selenium via CDP</td><td>Fora da API (extensão ou uso manual)</td></tr>
+</tbody></table>
+
+<h3>O que construir</h3>
+<ol class="steps">
+  <li><b>Adaptador <code>BrowserProfileClient</code></b> com dois drivers: <code>IxBrowserDriver</code> e <code>FoxDriver</code>, expondo a mesma interface (<code>list</code>, <code>launch</code>, <code>close</code>, <code>active</code>). O driver é escolhido por configuração do usuário.</li>
+  <li><b>Tela “Perfis de publicação”</b>: lista com nome, grupo, status e site WordPress vinculado; seleção múltipla e botão “Publicar em N perfis”.</li>
+  <li><b>Painel de status por perfil</b>: fechado, abrindo, aberto, publicando, erro — atualizado por polling curto enquanto a fila roda.</li>
+  <li><b>Executor paralelo</b> com concorrência 5, retry 2x e backoff no 409 (espera e reconsulta <code>/browsers/active</code> antes de tentar de novo).</li>
+  
+  <li><b>No admin, aba Perfis</b> com teste de conexão ao Fox (<code>GET /profiles</code> e exibição do erro real de rede ou de chave).</li>
+</ol>
+
+<div class="callout">
+  <p><b>Atenção operacional.</b> O Fox roda na máquina do usuário. Se a publicação for feita pelo servidor, ele não alcança <code>localhost:8000</code>; a arquitetura correta é um agente local (o próprio app desktop ou uma extensão) que executa a fila e reporta ao servidor. Com o ixBrowser o mesmo vale para o CDP.</p>
+</div>
+
+<div style="break-before: auto;"></div>
+
+<h2>12. Prioridades e sequência</h2>
+
+<table class="data">
+  <tbody><tr><th>Escopo</th><th>Itens</th><th>Esforço</th><th>Dependência</th></tr>
+  <tr><td>Só no front</td><td>Copiar HTML real (B6); contagem de palavras (B5)</td><td>Horas</td><td>Nenhuma</td></tr>
+  <tr><td>Backend mínimo</td><td>Auth completa (A1–A7); dados no Postgres (I1–I5); limites e papéis no servidor (G4, A6)</td><td>Semanas</td><td>Servidor, banco, e-mail</td></tr>
+  <tr><td>Terceiros</td><td>LLM (B1–B4, B8); WordPress (E1–E5); Mercado Pago (G1–G6); Fox/ixBrowser (E6, H6, item 11)</td><td>Semanas</td><td>Contratos, chaves, contas</td></tr>
+  <tr><td>Interno, mas depende do banco</td><td>Pipelines e RSS (C1–C5, D1–D5); admin (H1–H5, H7)</td><td>Semanas</td><td>Fila de jobs e banco</td></tr>
+</tbody></table>
+
+<h3>Sequência sugerida em 5 fases</h3>
+<div class="timeline">
+  <div><div class="when">Fase 1</div>Front + backend mínimo: login, cadastro, sessão e dados no Postgres. Ao final, a conta é real e multi-dispositivo.</div>
+  <div><div class="when">Fase 2</div>Geração com LLM, progresso por SSE, artigos salvos com HTML e contagem real. Ao final, criar artigo funciona de ponta a ponta.</div>
+  <div><div class="when">Fase 3</div>WordPress real (teste de conexão, publicação, mídia) e chaves de API com <code>/v1/articles</code>. Ao final, o artigo sai do PixelPress e chega ao site.</div>
+  <div><div class="when">Fase 4</div>Planos e cobrança (checkout, webhook, faturas, PDF, cupons, inadimplência) e admin de usuários e métricas. Ao final, o produto vende e o admin opera.</div>
+  <div><div class="when">Fase 5</div>Pipelines agendados, RSS com polling e dedupe, perfis de publicação com o Fox. Ao final, o fluxo é automático e distribuído por perfis.</div>
+</div>
+
+<div class="callout">
+  <p><b>Definição de pronto.</b> Uma função deixa de ser estética quando (1) o efeito persiste no banco, (2) a regra é validada no servidor, e (3) o resultado pode ser consultado em outro dispositivo ou por outro usuário autorizado. Os 45 itens deste relatório só saem da lista quando os três critérios valem para cada um.</p>
+</div>
+
+</body></html>
